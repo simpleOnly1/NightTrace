@@ -43,6 +43,42 @@ class ContractTests(unittest.TestCase):
             cropped=dict(geom,gt_space='cropped')
             np.testing.assert_array_equal(prepare_gt(aligned,cropped),aligned)
 
+    def test_official_flare7kpp_directory_layout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            compound=root/'Scattering_Flare'/'Compound_Flare'
+            core=root/'Scattering_Flare'/'Core'
+            reflected=root/'Reflective_Flare'
+            for folder in (compound,core,reflected):
+                folder.mkdir(parents=True)
+            for name,folder in [('compound.png',compound),('core.png',core),
+                                ('reflective.png',reflected)]:
+                a=np.zeros((32,32,3),dtype=np.uint8)
+                cv2.line(a,(0,16),(31,16),(255,255,255),2)
+                cv2.imwrite(str(folder/name),a)
+            bank=list_flare_templates(root)
+            self.assertEqual(len(bank),2)
+            self.assertTrue(any('Compound_Flare' in p for p in bank))
+            self.assertTrue(any('Reflective_Flare' in p for p in bank))
+            self.assertFalse(any('/Core/' in p for p in bank))
+            ranges={'source_count':(1,1)}
+            draws=[sample_parameters(seed,ranges,bank) for seed in range(30)]
+            self.assertTrue(all('Compound_Flare' in p['sources'][0]['template']
+                                for p in draws))
+            self.assertTrue(any('reflective_template' in p['sources'][0]
+                                for p in draws))
+            self.assertTrue(any('reflective_template' not in p['sources'][0]
+                                for p in draws))
+            combined=next(p for p in draws if 'reflective_template' in p['sources'][0])
+            self.assertEqual(combined,sample_parameters(combined['seed'],ranges,bank))
+            image=torch.full((1,3,56,84),.2)
+            out,mask=degrade(image,'LNG',combined)
+            self.assertTrue(torch.isfinite(out).all())
+            self.assertGreater(float(mask.max()),0)
+            (compound/'compound.png').unlink()
+            with self.assertRaisesRegex(ValueError,'Compound_Flare'):
+                list_flare_templates(root)
+
     def test_flare_bank_shape_seed_and_fallback(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'shape.png'

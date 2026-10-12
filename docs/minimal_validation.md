@@ -86,20 +86,23 @@ python diagnose_spread.py --config config/nuscenes.yaml \
 增加 attention 之前的 `patch_embed` 对照。若该层未受影响 patch 已出现明显变化，
 先排查数值容差、mask 和预处理；F1–F4 的非局部漂移本身不能证明 attention 因果传播。
 
-### Flare7K 模板选项（默认无需素材即可调试）
+### Flare7K++ 现成素材（默认启用）
 
-若已下载官方 Flare7K 光源/光学伪影图片，建议优先运行：
+两个配置均设置 `diagnosis.flare_dir: /080226/Nighttime_Depth_Estimation/datasets/Flare7Kpp/Flare7K`。
+仅使用 `Scattering_Flare/Compound_Flare` 的完整散射模板，另行随机叠加
+`Reflective_Flare`。此采样规则参考官方Flare7K++ `scattering_dict/reflective_dict`，
+不会错误混入 `Core`、`Light_Source`、`Streak` 等分解成分。
 
 ```bash
-python diagnose.py --config config/robotcar.yaml --flare-dir /ABS/PATH/Flare7K/images \\
+python diagnose.py --config config/robotcar.yaml \
   --sample-list runs/rc_selection/samples.txt --out runs/rc_factorial_flare7k
 ```
 
-参数种子不仅固定二维位置、半径、强度，也固定模板路径；按文件名排序读取本地 bank。
-模板转为亮度形状后参与近似线性成像和 shot/read 噪声，当前尚不模拟色彩互补或三维反射。
-若不提供 `--flare-dir` / `diagnosis.flare_dir`，仍使用已有椭圆光晕+条纹后备模式，
-并在 `run.yaml` 中明确记录；指定的模板目录不存在或无图片会直接报错。
-文件中的位置与大小为图像域参数，不是米制光源距离。
+路径缺失时明确报错，不能静默使用程序化高斯替代真实素材；
+只有取消 `diagnosis.flare_dir` 配置时才使用原解析后备模式。
+`--prepare-only` 不加载素材，也无需DAV2权重。
+随机变换和是否叠加反射均按seed固定；这不代表完整传感器物理模型，
+光源尺寸也不代表实际米制距离。
 
 ## 4. 真实夜间评测与附件中的 GT 坐标问题
 

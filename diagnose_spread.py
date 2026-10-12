@@ -26,7 +26,7 @@ def main():
     samples,audit=select_samples(cfg,a.limit,a.seed,a.sample_list)
     out=project_path(a.out);out.mkdir(parents=True,exist_ok=True);save_selection(out,samples,audit)
     (out/'run.yaml').write_text(yaml.safe_dump(dict(config=cfg,arguments=vars(a),probe='compact G only',
-        flare_backend='Flare7K grayscale templates' if templates else 'analytic fallback',
+        flare_backend='Flare7K++ compound/reflective' if templates else 'analytic fallback',
         flare_template_count=len(templates))))
     model=DepthModel(str(project_path(m['weights'])),input_size=m.get('input_size',518),freeze_encoder=True,train_dpt=False)
     dev='cuda' if torch.cuda.is_available() else 'cpu';model.to(dev).eval()
