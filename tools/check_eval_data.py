@@ -14,6 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
 import argparse, pathlib
 import numpy as np
 from datasets import make_dataset
+from evaluation.protocol import prepare_gt
 from utils.config import load_config
 
 def main():
@@ -34,8 +35,10 @@ def main():
         if not path.is_file():raise FileNotFoundError('Missing GT: '+str(path))
         gt=np.squeeze(np.load(str(path)))
         if gt.ndim!=2:raise ValueError('Bad GT shape: '+str(gt.shape))
-        if i<3: print(i,x['id'],'RGB',tuple(x['image'].shape),'GT',gt.shape)
+        aligned=prepare_gt(gt,x['geometry'])
+        if i<3: print(i,x['id'],'RGB',tuple(x['image'].shape),'GT',gt.shape,
+                      'aligned GT',aligned.shape,'geometry',x['geometry'])
     print('PASS: %d/%d ordered test samples have unique IDs and matched GT'% (n,len(d)))
-    print('NOTE: final benchmark parity still requires checking the official STEPS RobotCar GT crop/mask')
+    print('PASS: explicit GT grid and RGB crop agree; verify projection provenance on real samples')
 
 if __name__=='__main__':main()

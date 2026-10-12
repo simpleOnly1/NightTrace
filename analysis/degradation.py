@@ -1,49 +1,19 @@
-"""Controlled physical factors for NightTrace diagnosis, not a restoration network.
-
-The controlled conditions separate photometric attenuation, read/shot noise,
-chromatic veiling and achromatic overexposure. Synthetic ≠ real sensor RAW.
-"""
+"""Legacy names routed through the same approximate imaging backend."""
+import warnings
 import torch
-import torch.nn.functional as F
+from .degradation_v2.pipeline import to_linear, to_srgb, degrade, sample_parameters
 
-
-def to_linear(rgb):
-    return torch.where(rgb<=.04045,rgb/12.92,((rgb+.055)/1.055).clamp_min(0)**2.4)
-
-def to_srgb(x):
-    x=x.clamp_min(0)
-    return torch.where(x<=.0031308,12.92*x,1.055*x**(1/2.4)-.055)
-
-def glare_mask(x,center=(.68,.32),sigma=.09):
-    _,_,h,w=x.shape
-    yy,xx=torch.meshgrid(torch.linspace(0,1,h,device=x.device),
-                         torch.linspace(0,1,w,device=x.device))
-    dist=(xx-center[0])**2+(yy-center[1])**2
-    mask=torch.exp(-dist/(2*sigma**2))
-    # Compact support so non-exposed pixels are EXACTLY unchanged for propagation tests.
-    mask=torch.where(dist <= (3*sigma)**2,mask,torch.zeros_like(mask))
-    return mask.view(1,1,h,w)
 
 def corrupt(rgb,kind='low',gain=.12,shot_peak=350,read_sigma=.003,
-            glare_strength=2.0,generator=None):
-    kinds=('low','low_noise','low_colored_glare','low_white_glare',
-           'low_noise_colored_glare','low_noise_white_glare',
-           'colored_glare_only','white_glare_only')
-    if kind not in kinds:raise ValueError(kind)
-    lin=to_linear(rgb)
-    use_low=kind.startswith('low')
-    lin=lin*(gain if use_low else 1.0)
-    mask=torch.zeros_like(lin[:,:1])
-    if 'glare' in kind:
-        mask=glare_mask(rgb)
-        # additive radiance creates veiling and saturation; not a polygon overlay
-        gains=[1.0,.18,.09] if 'colored' in kind else [1.,1.,1.]
-        g=lin.new_tensor(gains).view(1,3,1,1)
-        lin=lin+glare_strength*mask*g
-    if 'noise' in kind:
-        # Sensor-domain rough approximation; intensity-dependent Poisson noise.
-        lin=torch.poisson(lin.clamp_min(0)*shot_peak)/shot_peak
-        lin=lin+torch.randn(lin.shape,device=lin.device,dtype=lin.dtype,
-                             generator=generator)*read_sigma
-    out=to_srgb(lin.clamp(0,1)).clamp(0,1)
-    return out,mask
+            glare_strength=2.,generator=None):
+    mapping={'low':'L','low_noise':'LN','low_colored_glare':'LG','low_white_glare':'LG',
+             'low_noise_colored_glare':'LNG','low_noise_white_glare':'LNG',
+             'colored_glare_only':'G','white_glare_only':'G'}
+    if kind not in mapping:raise ValueError(kind)
+    if 'colored' in kind:
+        warnings.warn('Legacy colored conditions now use achromatic G; use explicit L/N/G labels',
+                      DeprecationWarning,stacklevel=2)
+    seed=int(torch.randint(0,2**31-1,()).item()) if generator is None else generator.initial_seed()
+    p=sample_parameters(seed,{'exposure':(gain,gain),'shot_peak':(shot_peak,shot_peak),
+                             'read_sigma':(read_sigma,read_sigma),'amplitude':(glare_strength,glare_strength)})
+    return degrade(rgb,mapping[kind],p,compact=kind.endswith('_only'),generator=generator)

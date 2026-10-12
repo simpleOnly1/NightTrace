@@ -27,7 +27,8 @@ def run():
         assert align_gt_geometry(np.ones((60,80)),(48,64)).shape==(48,64)
         folder=Path(d)/'results';folder.mkdir()
         np.save(folder/'predictions.npy',np.ones((1,16,24),dtype=np.float32)*3)
-        (folder/'index.json').write_text(json.dumps([{'id':'0002','gt_path':str(p/'depth'/'0002.npy')}]))
+        (folder/'index.json').write_text(json.dumps([{'id':'0002','gt_path':str(p/'depth'/'0002.npy'),
+            'geometry':{'raw_hw':[48,64],'crop_xywh':[0,0,64,48],'input_hw':[16,24],'gt_space':'raw'}}]))
         result=run_evaluation(folder,kind='relative_depth',min_depth=.01,max_depth=100)
         assert result['a1']==1.0, result
     print('DATASET TESTS PASS')

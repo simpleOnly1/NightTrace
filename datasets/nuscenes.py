@@ -52,4 +52,5 @@ def make_nuscenes(cfg,split='day',training=True):
         records.append({'target': image, 'gt': label, 'id': stem})
     if not records:
         raise ValueError('Empty nuScenes test split: ' + str(split_path))
-    return FrameDataset(records, size=(cfg['input_height'], cfg['input_width']))
+    return FrameDataset(records, size=(cfg['input_height'], cfg['input_width']),
+                        gt_space=cfg.get('gt_space','raw'),dataset='nuscenes')

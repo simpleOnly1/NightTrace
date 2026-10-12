@@ -26,10 +26,9 @@ def depth_to_numpy(depth):
     return depth.detach().cpu().numpy()
 
 
-def colorize_depth(depth, vmax_percentile=95, cmap='magma'):
+def colorize_depth(depth, vmax_percentile=95, cmap='magma', limits=None):
     d = depth_to_numpy(depth)
-    vmax = np.percentile(d, vmax_percentile)
-    vmin = np.percentile(d, 5)
+    vmin,vmax = limits if limits is not None else (np.percentile(d,5),np.percentile(d,vmax_percentile))
     if vmax <= vmin:
         vmax = d.max() + 1e-6
         vmin = d.min()
@@ -38,9 +37,9 @@ def colorize_depth(depth, vmax_percentile=95, cmap='magma'):
     return (colored * 255.0).astype(np.uint8)
 
 
-def colorize_error(err, vmax_percentile=95, cmap='viridis'):
+def colorize_error(err, vmax_percentile=95, cmap='viridis', vmax=None):
     e = depth_to_numpy(err)
-    vmax = np.percentile(e, vmax_percentile)
+    vmax = np.percentile(e, vmax_percentile) if vmax is None else vmax
     vmin = 0.0
     e = np.clip((e - vmin) / (vmax - vmin + 1e-8), 0, 1)
     colored = plt.get_cmap(cmap)(e)[..., :3]
@@ -71,13 +70,17 @@ def save_panel(
     clean_rgb_np = tensor_rgb_to_uint8(clean_rgb)
     degraded_rgb_np = tensor_rgb_to_uint8(degraded_rgb)
 
-    clean_depth_np = colorize_depth(clean_depth)
-    degraded_depth_np = colorize_depth(degraded_depth)
-    swap4_depth_np = colorize_depth(swap4_depth)
-    swap34_depth_np = colorize_depth(swap34_depth)
+    q=depth_to_numpy(clean_depth)
+    limits=(float(np.percentile(q,5)),float(np.percentile(q,95)))
+    if limits[1]<=limits[0]:limits=(limits[0],limits[0]+1e-6)
+    error_max=max(float(np.percentile(depth_to_numpy(degraded_err),95)),1e-8)
+    clean_depth_np = colorize_depth(clean_depth,limits=limits)
+    degraded_depth_np = colorize_depth(degraded_depth,limits=limits)
+    swap4_depth_np = colorize_depth(swap4_depth,limits=limits)
+    swap34_depth_np = colorize_depth(swap34_depth,limits=limits)
 
-    degraded_err_np = colorize_error(degraded_err)
-    swap34_err_np = colorize_error(swap34_err)
+    degraded_err_np = colorize_error(degraded_err,vmax=error_max)
+    swap34_err_np = colorize_error(swap34_err,vmax=error_max)
 
     # 单独保存
     save_image(clean_rgb_np, save_dir / 'clean_rgb.png')
@@ -96,12 +99,12 @@ def save_panel(
     panels = [
         (clean_rgb_np, 'Clean RGB'),
         (degraded_rgb_np, 'Degraded RGB'),
-        (clean_depth_np, 'Clean Depth'),
-        (degraded_depth_np, 'Degraded Depth'),
+        (clean_depth_np, 'Clean inverse-depth q'),
+        (degraded_depth_np, 'Degraded inverse-depth q'),
         (swap4_depth_np, 'Swap F4'),
         (swap34_depth_np, 'Swap F3+F4'),
-        (degraded_err_np, 'Error (Degraded)'),
-        (swap34_err_np, 'Error (Swap F3+F4)')
+        (degraded_err_np, 'Absolute q drift (Degraded)'),
+        (swap34_err_np, 'Absolute q drift (Swap F3+F4)')
     ]
 
     for ax, (img, name) in zip(axes, panels):

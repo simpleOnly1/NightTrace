@@ -9,8 +9,8 @@ def main():
     p.add_argument('--align',choices=['median','scale_shift','none'])
     p.add_argument('--output')
     a=p.parse_args()
-    c=load_config(a.config)['eval']
+    cfg=load_config(a.config);c=cfg['eval']
     result=evaluate_records(a.pred_dir,a.output,a.align or c.get('align','median'),
-                            c['min_depth'],c['max_depth'])
+                            c['min_depth'],c['max_depth'],dataset=cfg['data']['name'])
     print(json.dumps(result,indent=2))
 if __name__=='__main__':main()

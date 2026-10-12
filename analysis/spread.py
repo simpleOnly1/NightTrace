@@ -9,9 +9,11 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-def spatial_drift(clean_features,dark_features,patch_hw,pixel_change_mask):
+def spatial_drift(clean_features,dark_features,patch_hw,pixel_change_mask,layer_names=None):
     h,w=patch_hw
-    changed=F.interpolate(pixel_change_mask.float(),size=(h,w),mode='nearest')[0,0].cpu().numpy()>.05
+    if pixel_change_mask.shape[-2:] != (h*14,w*14):
+        raise ValueError('Mask must be computed AFTER actual DAV2 preprocessing')
+    changed=F.max_pool2d(pixel_change_mask.float(),14,14)[0,0].cpu().numpy()>0
     if not changed.any():return []
     # Distance in tokens from the nearest changed patch.
     dt=distance_transform_edt(~changed)
@@ -23,7 +25,7 @@ def spatial_drift(clean_features,dark_features,patch_hw,pixel_change_mask):
         d=fd[0] if isinstance(fd,tuple) else fd
         c=F.normalize(c.float(),dim=-1)
         d=F.normalize(d.float(),dim=-1)
-        drift=(1-(c*d).sum(-1)).reshape(h,w).cpu().numpy()
+        drift=(1-(c*d).sum(-1)).reshape(h,w).detach().cpu().numpy()
         for label,mask in bands:
-            if mask.any():rows.append(dict(layer='F%d'%layer,band=label,drift=float(np.mean(drift[mask])),n=int(mask.sum())))
+            if mask.any():rows.append(dict(layer=layer_names[layer-1] if layer_names else 'F%d'%layer,band=label,drift=float(np.mean(drift[mask])),n=int(mask.sum())))
     return rows

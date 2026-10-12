@@ -12,9 +12,9 @@ def plot_lrr(df, out_dir):
     for _, row in df.iterrows():
         y = [row[k] for k in LAYER_KEYS]
         plt.plot(['F1', 'F2', 'F3', 'F4'], y, marker='o', label=row['condition'])
-    plt.ylim(0, 1.05)
+    plt.ylim(-1.05, 1.05)
     plt.ylabel('LRR')
-    plt.title('Layer-wise structural consistency')
+    plt.title('Layer-wise relation consistency')
     plt.legend(fontsize=8)
     plt.tight_layout()
     plt.savefig(out_dir / 'lrr_curves.png', dpi=200)
@@ -25,7 +25,7 @@ def plot_depth_drift(df, out_dir):
     plt.figure(figsize=(10, 5))
     plt.bar(df['condition'], df['depth_drift'])
     plt.xticks(rotation=45, ha='right')
-    plt.ylabel('Depth drift')
+    plt.ylabel('Raw inverse-depth consistency drift')
     plt.title('Depth prediction drift under different degradations')
     plt.tight_layout()
     plt.savefig(out_dir / 'depth_drift.png', dpi=200)

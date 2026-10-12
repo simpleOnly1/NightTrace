@@ -1,20 +1,15 @@
-# NightTrace build status — 2026-10-08
+# NightTrace build status — 2026-10-12
 
-**Included and locally tested without external checkpoints:** Native STEPS-like
-RobotCar/nuScenes dataset loading and split ordering, center crop, outputs
-`predictions.npy`, seven STEPS depth metrics, median alignment, visualization,
-ACDepth-style day trainer, DAV2 wrapper, geometric reprojection, degradation
-and layer diagnostic scripts, plus offline one-time source import.
+本次实现和运行方式见 [最小前期验证](docs/minimal_validation.md)。
 
-**Still required on the user server:** Import official DAV2 Python files into
-`models/depth_anything_v2/` and real STEPS splits into `split_files/` (via
-`tools/prepare_sources.py`); place `depth_anything_v2_vitl.pth` under
-`models/checkpoints/`; run the real checkpoint forward and validate data/GT
-ordering, RobotCar GT region/mask and STEPS numerical parity on real data.
+已实现：显式 RGB/GT 坐标协议、RobotCar 40m / nuScenes 60m 默认评测、
+跨完整白天 split 分组抽样和轻量去重、统一近似线性成像后端、连续均匀参数、
+L/N/G 八组配对与交互统计、正斜率仿射/次序指标、F1–F4 对称 DPT swap 和负对照、
+模型输入空间 patch 支持域及 patch embedding 对照。无 mainfast.json 前置流程。
 
-**Scientific boundary:** Existing night-loss/network changes are not included.
-`train.py --stage night` refuses execution pending causal degradation analysis.
-This prevents an unvalidated method from being presented as the final model.
+本地验证：CPU 回归测试与小型假模型入口贯通；不等价于真实 DAV2 实验。
+真实 RGB/GT、DAV2-L checkpoint 不在本环境，数据坐标来源、真实帧覆盖、
+实际 GPU forward 和合成到真实夜景的机制一致性仍需在数据服务器验证。
 
-**No `*_original`/`third_party` directories**, no STEPS/RNW sibling repository,
-no Git dependency.
+没有训练新网络、PoseNet 或 DPT。未实现冻结几何 probe 和编码器内因果路径干预。
+`train.py --stage night` 继续拒绝尚未定义的夜间训练。

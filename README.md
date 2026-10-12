@@ -7,7 +7,7 @@
 
 ## 0. 我们正在做什么？
 
-当前阶段不预设夜间网络或新的 loss，而是先固定一个可信的 DAV2 相对深度基线和可复现的评估协议，随后研究曝光衰减、噪声、彩色/白色眩光对 ViT-L F1/F2/F3/F4 的传播影响。否则评估或预处理的改变可能会被误当成方法改进。后续机制成立后只修改 `models/`、`losses/` 和 `analysis/`。
+当前阶段不预设夜间网络或新的 loss，而是先固定一个可信的 DAV2 相对深度基线和可复现的评估协议，随后研究曝光衰减、噪声、白色光学眩光对 ViT-L F1/F2/F3/F4 的传播影响。否则评估或预处理的改变可能会被误当成方法改进。后续机制成立后只修改 `models/`、`losses/` 和 `analysis/`。
 
 ## 1. 项目内目录与职责
 
@@ -156,9 +156,9 @@ python evaluate.py \
 python show_eval_result.py --file evaluation/ns_result/metrics.json
 ```
 
-`predictions.npy` 的顺序严格是按数据中的测试 split 排序；测试入口不碰 GT，仅在 evaluator 中调用相应 `.npy`。RobotCar 使用 STEPS 的 **1152×640 中心裁剪**再 resize 到测试尺寸；nuScenes 遵循 split 图像列表顺序。评估阶段 prediction 通过最近邻插值到 GT shape，逐图算 median scale 和 7 项指标。nuScenes 默认 `(1e-5,60m)`，RobotCar 当前设置 `(0.1,100m)`。
+`predictions.npy` 的顺序严格是按数据中的测试 split 排序；测试入口不碰 GT，仅在 evaluator 中调用相应 `.npy`。RobotCar 使用 STEPS 的 **1152×640 中心裁剪**再 resize 到测试尺寸；nuScenes 遵循 split 图像列表顺序。评估阶段先依据预测索引的坐标元数据对齐 GT/RGB 视场，再将 prediction 最近邻插值到裁剪后的 GT shape，逐图算 median scale 和 7 项指标。nuScenes 默认 `(1e-5,60m)`，RobotCar 默认 `(0.1,40m)`。
 
-**重要边界：** RobotCar GT 的有效区域、crop/mask 必须根据你的原始 STEPS 数据以及官方 `eval_robotcar.py` 再核对一次，未通过该核对前不要宣称与 STEPS 的 RobotCar 官方榜单完全同协议。本项目明确拒绝悄悄缩放 GT 来掩盖尺寸差异。
+**GT 坐标检查：** `data.gt_space: raw` 要求 GT 与原始 RGB 同网格，然后使用相同中心裁剪；已核实预裁剪 GT 才可设 `cropped`。缺少坐标元数据的旧预测需重新生成，尺寸不符直接报错。形状检查不能替代真实投影来源的核验，详见 [最小前期验证](docs/minimal_validation.md)。
 
 ## 6. 核对评估与 STEPS 数值实现（为什么？）
 
@@ -173,7 +173,7 @@ python tools/check_parity.py --steps-zip /path/to/STEPS-master.zip
 
 ## 7. 白天自监督基线与 NightTrace 退化诊断
 
-白天训练提供 DAV2-L + DPT + PoseNet 的自监督基线，loss 使用 daytime view synthesis（最小重投影、SSIM+L1、automask、smoothness）。训练只使用白天 RGB 视频序列与 K，没有 GT depth/pose。`train.py` 与 `trainer.py` 采用 ACDepth 风格职责分离。
+下列白天训练仅为可选基线，当前冻结模型诊断不需要它。白天训练提供 DAV2-L + DPT + PoseNet 的自监督基线，loss 使用 daytime view synthesis（最小重投影、SSIM+L1、automask、smoothness）。训练只使用白天 RGB 视频序列与 K，没有 GT depth/pose。`train.py` 与 `trainer.py` 采用 ACDepth 风格职责分离。
 
 ```bash
 # 一次小型 GPU 检查，不会跑完整训练
@@ -190,16 +190,17 @@ bash scripts/train_ns_day.sh
 ```bash
 bash scripts/diagnose_robotcar.sh
 python diagnose_spread.py --config config/robotcar.yaml \
-    --limit 128 --out runs/diagnose_spread
+    --sample-list runs/diagnose_robotcar/samples.txt --out runs/diagnose_spread
 ```
 
-它们检验不同弱光、噪声、彩色/白色眩光的结构保持以及局部扰动向其他 token 的扩散；先确定机制，再决定新 `models/nighttrace.py` 和 `losses/nighttrace_loss.py`。
+主诊断默认跨完整白天 split 分组筛选 512 张，2 个随机实例，运行完整 L/N/G 八组配对实验；传播脚本使用独立的紧支撑局部探针。结果仅描述关系/输出一致性和 DPT oracle 恢复潜力。详细命令、统计定义、GT 坐标修复及真实夜间验证边界见 [最小前期验证](docs/minimal_validation.md)。
 
 **暂时没有实现夜间损失。** 当前 `python train.py --stage night ...` 会明确提示尚未确定，不会假装完成真实夜间训练。这是当前研究阶段有意保留的科学边界。
 
 ## 8. 本地无大模型测试
 
 ```bash
+python tests/test_diagnosis_protocol.py
 python tests/test_core.py
 python tests/test_dataset.py
 python tests/test_geometry.py

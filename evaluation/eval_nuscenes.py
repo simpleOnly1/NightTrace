@@ -14,6 +14,6 @@ def main():
     p.add_argument('--output_file_name')
     p.add_argument('--align',choices=['median','scale_shift','none'],default='median')
     a=p.parse_args()
-    x=evaluate_records(a.pred_dir,a.output_file_name,a.align,a.min_depth,a.max_depth)
+    x=evaluate_records(a.pred_dir,a.output_file_name,a.align,a.min_depth,a.max_depth,dataset='nuscenes')
     print(json.dumps(x,indent=2))
 if __name__=='__main__':main()

@@ -3,6 +3,7 @@ seed: 42
 device: cuda
 data:
   name: nuscenes
+  gt_space: raw  # Use cropped only for verified GT already in the RGB crop coordinates.
   root: data/nuScenes-Night
   input_height: 448
   input_width: 784
@@ -36,3 +37,22 @@ eval:
   max_depth: 60.0
   vis_percentile: 95
   output: results/nuscenes
+
+# Lightweight frozen-model diagnosis. These are starting ranges, not calibration.
+diagnosis:
+  block_seconds: 30  # RobotCar time blocks; nuScenes uses clip directories
+  min_gap_seconds: 1.0  # for recognized microsecond timestamps
+  min_gap_frames: 10    # fallback when timestamp is unavailable
+  duplicate_mae: 0.015  # 18x32 gray thumbnail MAE, [0,1]; 0 disables
+  degradation_ranges:
+    exposure: [0.08, 0.4]
+    shot_peak: [100.0, 500.0]
+    read_sigma: [0.001, 0.008]
+    source_count: [1, 3]
+    u: [-0.1, 1.1]  # image-plane coordinates; allows near-frame exterior sources
+    v: [0.1, 0.7]   # broad road-image prior, not semantic placement
+    radius: [0.025, 0.15]  # fraction of short edge, NOT source depth
+    amplitude: [0.2, 1.2]
+    aspect: [0.6, 1.8]
+    angle: [0.0, 3.141592653589793]
+    streak_weight: [0.0, 0.5]

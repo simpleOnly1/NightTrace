@@ -97,12 +97,19 @@ class ClipDataset(Dataset):
 
 class FrameDataset(Dataset):
     """Eval returns unprocessed center-cropped rgb and optional GT path (no GT loaded)."""
-    def __init__(self,records,crop=None,size=None):self.records=records;self.crop=crop;self.size=size
+    def __init__(self,records,crop=None,size=None,gt_space='raw',dataset=None):
+        self.records=records;self.crop=crop;self.size=size
+        self.gt_space=gt_space;self.dataset=dataset
     def __len__(self):return len(self.records)
     def __getitem__(self,idx):
         rec=self.records[idx]
         x,hw=rgb(rec['target'],size=self.size,crop=self.crop)
-        return {'image':x,'id':rec['id'],'gt_path':str(rec.get('gt','')),'height':hw[0],'width':hw[1]}
+        raw_hw=original_size(rec['target'])
+        ch,cw=hw;rh,rw=raw_hw
+        geometry={'raw_hw':list(raw_hw),'crop_xywh':[(rw-cw)//2,(rh-ch)//2,cw,ch],
+                  'input_hw':list(x.shape[-2:]),'gt_space':self.gt_space}
+        return {'image':x,'id':rec['id'],'gt_path':str(rec.get('gt','')),
+                'height':hw[0],'width':hw[1],'geometry':geometry,'dataset':self.dataset}
 
 def seq_records(frames,K,split_keys=None,offsets=(-1,1),strict=True):
     """Never construct temporal pairs across recording boundaries."""

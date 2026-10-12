@@ -15,7 +15,8 @@ def make_robotcar(cfg,split='day',training=True):
     frames=sorted(p for p in img_dir.iterdir() if p.suffix.lower() in IMG_EXTS)
     if training:
         entries=seq_records(frames,pkg/'intrinsic.npy',names,cfg.get('offsets',[-1,1]))
-        return ClipDataset(entries,cfg['input_height'],cfg['input_width'],cfg.get('offsets',[-1,1]))
+        return ClipDataset(entries,cfg['input_height'],cfg['input_width'],cfg.get('offsets',[-1,1]),
+                           crop=(cfg.get('crop_width',1152),cfg.get('crop_height',640)))
     eval_records=[]
     for token in names:
         filename=Path(token).name
@@ -26,4 +27,5 @@ def make_robotcar(cfg,split='day',training=True):
         gt_path = pkg / 'depth' / (path.stem + gt_suffix + '.npy')
         eval_records.append({'target':path,'gt':gt_path,'id':path.stem})
     crop=(cfg.get('crop_width',1152),cfg.get('crop_height',640))
-    return FrameDataset(eval_records,crop=crop,size=(cfg['input_height'],cfg['input_width']))
+    return FrameDataset(eval_records,crop=crop,size=(cfg['input_height'],cfg['input_width']),
+                        gt_space=cfg.get('gt_space','raw'),dataset='robotcar')

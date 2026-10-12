@@ -38,7 +38,8 @@ def run(config,output,checkpoint=None,vis=False,limit=0,split_override=None):
             d=res['relative_depth'][0,0].cpu().numpy().astype(np.float32)
             q=res['raw_relative'][0,0].cpu().numpy().astype(np.float32)
             depth.append(d);raw.append(q)
-            index.append({'id':rec['id'],'gt_path':rec['gt_path']})
+            index.append({'id':rec['id'],'gt_path':rec['gt_path'],
+                          'geometry':rec['geometry'],'dataset':rec['dataset']})
             if vis:
                 save_relative_disp(q,out/'vis'/(str(rec['id'])+'.png'),95)
     if not depth:raise ValueError('Empty test dataset')
