@@ -1,0 +1,42 @@
+project: NightTrace
+seed: 42
+device: cuda
+data:
+  name: robotcar
+  gt_suffix: _depth
+  root: data/RobotCar-Night
+  day_package: 2014-12-09-13-21-02
+  night_package: 2014-12-16-18-44-24
+  input_height: 392
+  input_width: 672
+  crop_width: 1152
+  crop_height: 640
+  num_workers: 4
+  offsets: [-1, 1]
+model:
+  name: dav2_vitl
+  weights: models/checkpoints/depth_anything_v2_vitl.pth
+  input_size: 518
+  encoder_frozen: true
+  train_dpt: true
+  inverse_epsilon: 0.001
+train:
+  stage: day
+  batch_size: 2
+  epochs: 10
+  lr: 0.00005
+  weight_decay: 0.0001
+  smoothness_weight: 0.001
+  grad_clip: 1.0
+  log_every: 50
+  save_dir: runs/robotcar_day
+  resume: ''
+eval:
+  split: night
+  align: median
+  input_is: relative_depth  # predictions.npy stores depth, not DAV2 q
+  min_depth: 0.1
+  max_depth: 100.0
+  # STEPS-style input image central crop; GT spatial matching is verified at runtime.
+  vis_percentile: 95
+  output: results/robotcar

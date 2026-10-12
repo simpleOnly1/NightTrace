@@ -1,0 +1,38 @@
+project: NightTrace
+seed: 42
+device: cuda
+data:
+  name: nuscenes
+  root: data/nuScenes-Night
+  input_height: 448
+  input_width: 784
+  num_workers: 4
+  offsets: [-1, 1]
+  # nuScenes clip split fields follow STEPS: splits/day_train_split.txt etc.
+  split_dir: splits
+model:
+  name: dav2_vitl
+  weights: models/checkpoints/depth_anything_v2_vitl.pth
+  input_size: 518
+  encoder_frozen: true
+  train_dpt: true
+  inverse_epsilon: 0.001
+train:
+  stage: day
+  batch_size: 2
+  epochs: 10
+  lr: 0.00005
+  weight_decay: 0.0001
+  smoothness_weight: 0.001
+  grad_clip: 1.0
+  log_every: 50
+  save_dir: runs/nuscenes_day
+  resume: ''
+eval:
+  split: night
+  align: median
+  input_is: relative_depth  # predictions.npy stores depth, not DAV2 q
+  min_depth: 0.00001
+  max_depth: 60.0
+  vis_percentile: 95
+  output: results/nuscenes
