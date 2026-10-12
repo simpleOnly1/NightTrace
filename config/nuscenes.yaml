@@ -40,6 +40,7 @@ eval:
 
 # Lightweight frozen-model diagnosis. These are starting ranges, not calibration.
 diagnosis:
+  # flare_dir: /ABS/PATH/Flare7K/images  # optional; without it uses an analytic fallback
   block_seconds: 30  # RobotCar time blocks; nuScenes uses clip directories
   min_gap_seconds: 1.0  # for recognized microsecond timestamps
   min_gap_frames: 10    # fallback when timestamp is unavailable

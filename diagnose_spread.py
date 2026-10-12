@@ -6,7 +6,7 @@ from tqdm import tqdm
 from utils.config import load_config,project_path
 from datasets.common import rgb
 from models.depth_model import DepthModel
-from analysis.degradation_v2.pipeline import sample_parameters,degrade
+from analysis.degradation_v2.pipeline import sample_parameters,degrade,list_flare_templates
 from analysis.sampling import select_samples,save_selection,stable_seed
 from analysis.spread import spatial_drift
 from analysis.statistics import write_csv,group_estimate
@@ -17,12 +17,17 @@ def main():
     p.add_argument('--config',required=True);p.add_argument('--limit',type=int,default=512)
     p.add_argument('--out',default='runs/spread');p.add_argument('--seed',type=int,default=42)
     p.add_argument('--sample-list');p.add_argument('--repeats',type=int,default=2)
+    p.add_argument('--flare-dir',help='Optional Flare7K template folder')
     a=p.parse_args()
     if a.repeats<1:raise ValueError('repeats must be positive')
     cfg=load_config(a.config);d=cfg['data'];m=cfg['model']
+    flare_path=a.flare_dir or cfg.get('diagnosis',{}).get('flare_dir')
+    templates=list_flare_templates(project_path(flare_path) if flare_path else None)
     samples,audit=select_samples(cfg,a.limit,a.seed,a.sample_list)
     out=project_path(a.out);out.mkdir(parents=True,exist_ok=True);save_selection(out,samples,audit)
-    (out/'run.yaml').write_text(yaml.safe_dump(dict(config=cfg,arguments=vars(a),probe='compact G only')))
+    (out/'run.yaml').write_text(yaml.safe_dump(dict(config=cfg,arguments=vars(a),probe='compact G only',
+        flare_backend='Flare7K grayscale templates' if templates else 'analytic fallback',
+        flare_template_count=len(templates))))
     model=DepthModel(str(project_path(m['weights'])),input_size=m.get('input_size',518),freeze_encoder=True,train_dpt=False)
     dev='cuda' if torch.cuda.is_available() else 'cpu';model.to(dev).eval()
     crop=(d.get('crop_width',1152),d.get('crop_height',640)) if d['name']=='robotcar' else None
@@ -36,7 +41,8 @@ def main():
             for repeat in range(a.repeats):
                 seed=stable_seed(a.seed,sample['id'],repeat)
                 # Compact, in-frame localized probe: do not call this natural night synthesis.
-                params=sample_parameters(seed,{'source_count':(1,1),'radius':(.02,.06),'u':(.1,.9),'v':(.1,.9)})
+                params=sample_parameters(seed,{'source_count':(1,1),'radius':(.02,.06),'u':(.1,.9),'v':(.1,.9)},
+                                         flare_templates=templates)
                 dark,_=degrade(x,'G',params,compact=True)
                 bad_inp,bad_feat=model.extract(dark)
                 changed=(bad_inp-inp).abs().amax(1,keepdim=True)>0

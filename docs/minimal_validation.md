@@ -86,13 +86,28 @@ python diagnose_spread.py --config config/nuscenes.yaml \
 增加 attention 之前的 `patch_embed` 对照。若该层未受影响 patch 已出现明显变化，
 先排查数值容差、mask 和预处理；F1–F4 的非局部漂移本身不能证明 attention 因果传播。
 
+### Flare7K 模板选项（默认无需素材即可调试）
+
+若已下载官方 Flare7K 光源/光学伪影图片，建议优先运行：
+
+```bash
+python diagnose.py --config config/robotcar.yaml --flare-dir /ABS/PATH/Flare7K/images \\
+  --sample-list runs/rc_selection/samples.txt --out runs/rc_factorial_flare7k
+```
+
+参数种子不仅固定二维位置、半径、强度，也固定模板路径；按文件名排序读取本地 bank。
+模板转为亮度形状后参与近似线性成像和 shot/read 噪声，当前尚不模拟色彩互补或三维反射。
+若不提供 `--flare-dir` / `diagnosis.flare_dir`，仍使用已有椭圆光晕+条纹后备模式，
+并在 `run.yaml` 中明确记录；指定的模板目录不存在或无图片会直接报错。
+文件中的位置与大小为图像域参数，不是米制光源距离。
+
 ## 4. 真实夜间评测与附件中的 GT 坐标问题
 
 ```bash
-python tools/check_eval_data.py --config config/robotcar.yaml
+python tools/check_eval_data.py --config config/robotcar.yaml --overlays 12 --out runs/gt_audit_robotcar
 python test_robotcar_disp.py night --config config/robotcar.yaml --out evaluation/rc_result
 python evaluate.py --config config/robotcar.yaml --pred-dir evaluation/rc_result
-python tools/check_eval_data.py --config config/nuscenes.yaml
+python tools/check_eval_data.py --config config/nuscenes.yaml --overlays 12 --out runs/gt_audit_nuscenes
 python test_nuscenes_disp.py night --config config/nuscenes.yaml --out evaluation/ns_result
 python evaluate.py --config config/nuscenes.yaml --pred-dir evaluation/ns_result
 ```
@@ -116,6 +131,9 @@ python evaluation/eval_robotcar.py night --pred_dir evaluation/rc_result \
 
 RobotCar 的 RGB 在训练、诊断、测试中均用配置中的 1152×640 中心裁剪；K 对应减去裁剪偏移再缩放。
 形状一致仍不能证明 LiDAR 投影、时间同步或已裁剪 GT 的坐标来源正确，需要真实样本目视核验。
+`check_eval_data.py --overlays 12` 会在原图上画出裁剪窗口，并将有效稀疏GT彩色点覆盖到裁剪后的RGB上，
+同时输出 `audit.csv`。彩色点仅用于视觉检查，**不会在指标计算中插值GT**。
+原图与GT的投影来源未核实前，不能据此宣称评测协议已经通过真实数据验证。
 
 ## 5. 已实现与未声称完成
 
