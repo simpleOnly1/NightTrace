@@ -37,13 +37,16 @@ def main():
     if len(set(a.conditions))!=len(a.conditions):raise ValueError('Duplicate conditions')
     cfg=load_config(a.config);d=cfg['data'];m=cfg['model']
     flare_path=a.flare_dir or cfg.get('diagnosis',{}).get('flare_dir')
-    templates=list_flare_templates(project_path(flare_path) if flare_path else None)
+    # Selection-only mode must work without Flare7K assets or DAV2 weights.
+    templates=(list_flare_templates(project_path(flare_path) if flare_path else None)
+               if not a.prepare_only else [])
     out=project_path(a.out);out.mkdir(parents=True,exist_ok=True)
     selected,audit=select_samples(cfg,a.limit,a.seed,a.sample_list)
     save_selection(out,selected,audit)
     (out/'run.yaml').write_text(yaml.safe_dump(dict(config=cfg,arguments=vars(a),
         estimand='group-balanced synthetic consistency; not real-world GT accuracy',
-        flare_backend='Flare7K grayscale templates' if templates else 'analytic fallback',
+        flare_backend=('sampling only; no templates loaded' if a.prepare_only else
+                       'Flare7K++ compound/reflective' if templates else 'analytic fallback'),
         flare_template_count=len(templates)),sort_keys=False))
     if a.prepare_only:
         print('Selected',len(selected),'images; inspect',out/'sampling_coverage.csv');return

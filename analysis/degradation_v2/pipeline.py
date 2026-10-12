@@ -33,8 +33,27 @@ def list_flare_templates(folder):
     path=Path(folder).expanduser()
     if not path.is_dir():
         raise FileNotFoundError('Flare bank folder not found: '+str(path))
-    files=sorted(str(p.resolve()) for p in path.rglob('*')
-                 if p.is_file() and p.suffix.lower() in ('.png','.jpg','.jpeg','.bmp','.tif','.tiff'))
+    extensions={'.png','.jpg','.jpeg','.bmp','.tif','.tiff'}
+    def images(directory):
+        return sorted(str(p.resolve()) for p in directory.rglob('*')
+                      if p.is_file() and p.suffix.lower() in extensions)
+    # Official Flare7K++ uses scattering Compound_Flare, with optional
+    # Reflective_Flare. Core, Streak and Light_Source are components, not
+    # independent complete scattering templates.
+    scattering=path/'Scattering_Flare'
+    reflection=path/'Reflective_Flare'
+    if scattering.is_dir() or reflection.is_dir():
+        compound=scattering/'Compound_Flare'
+        if not compound.is_dir():
+            raise FileNotFoundError('Flare7K++ Compound_Flare folder missing: '+str(compound))
+        scatter=images(compound)
+        if not scatter:
+            raise ValueError('No Compound_Flare images found: '+str(compound))
+        reflected=images(reflection) if reflection.is_dir() else []
+        if reflection.is_dir() and not reflected:
+            raise ValueError('Reflective_Flare folder contains no images: '+str(reflection))
+        return scatter+reflected
+    files=images(path)  # Backward compatible with a custom flat image bank.
     if not files:
         raise ValueError('Flare bank contains no image templates: '+str(path))
     return files
@@ -86,8 +105,16 @@ def sample_parameters(seed, ranges=None, flare_templates=None):
                        for _ in range(int(rng.integers(lo,hi+1)))]
     if flare_templates:
         bank=sorted(str(p) for p in flare_templates)
+        scatter=[p for p in bank if 'Reflective_Flare' not in Path(p).parts]
+        reflected=[p for p in bank if 'Reflective_Flare' in Path(p).parts]
+        if not scatter:
+            raise ValueError('At least one scattering flare template is required')
         for source in params['sources']:
-            source['template']=bank[int(rng.integers(len(bank)))]
+            source['template']=scatter[int(rng.integers(len(scatter)))]
+            # Optional reflection: 50% is an experimental knob, not an
+            # estimated frequency of reflections in real road scenes.
+            if reflected and rng.random()<0.5:
+                source['reflective_template']=reflected[int(rng.integers(len(reflected)))]
     return params
 
 
@@ -108,6 +135,12 @@ def flare_field(img, sources, compact=False):
             template=torch.as_tensor(_flare_gray(s['template']),device=img.device,dtype=img.dtype)[None,None]
             grid=torch.stack((xr/(r*s['aspect']),yr/r),dim=-1)[None]
             psf=F.grid_sample(template,grid,mode='bilinear',padding_mode='zeros',align_corners=True)[0,0]
+            if 'reflective_template' in s:
+                reflection=torch.as_tensor(_flare_gray(s['reflective_template']),
+                                           device=img.device,dtype=img.dtype)[None,None]
+                reflection=F.grid_sample(reflection,grid,mode='bilinear',
+                                         padding_mode='zeros',align_corners=True)[0,0]
+                psf=(psf+0.5*reflection).clamp(0,1)
             if compact:
                 psf=torch.where(radius2<=1,psf,torch.zeros_like(psf))
         else:
