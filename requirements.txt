@@ -1,0 +1,6 @@
+# Install matching PyTorch/torchvision for YOUR server CUDA separately.
+numpy
+opencv-python
+PyYAML
+tqdm
+scipy
