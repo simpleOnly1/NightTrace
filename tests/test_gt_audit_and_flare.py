@@ -43,6 +43,19 @@ class ContractTests(unittest.TestCase):
             cropped=dict(geom,gt_space='cropped')
             np.testing.assert_array_equal(prepare_gt(aligned,cropped),aligned)
 
+    def test_optional_reflection_csv_column(self):
+        import csv
+        from analysis.statistics import write_csv
+        with tempfile.TemporaryDirectory() as tmp:
+            out=Path(tmp)/'parameters.csv'
+            write_csv(out,[{'id':'one','template':'scatter.png'},
+                           {'id':'two','template':'scatter.png',
+                            'reflective_template':'reflection.png'}])
+            with out.open(newline='') as stream:
+                rows=list(csv.DictReader(stream))
+            self.assertEqual(rows[0]['reflective_template'],'')
+            self.assertEqual(rows[1]['reflective_template'],'reflection.png')
+
     def test_official_flare7kpp_directory_layout(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
