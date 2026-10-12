@@ -6,8 +6,12 @@ share one sampled parameter set; seeds do not depend on condition iteration.
 """
 import math
 import warnings
+from functools import lru_cache
+from pathlib import Path
+import cv2
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 CONDITIONS=('clean','L','N','G','LN','LG','NG','LNG')
 DEFAULT_RANGES={
@@ -16,6 +20,56 @@ DEFAULT_RANGES={
     'radius':(.025,.15), 'amplitude':(.2,1.2), 'aspect':(.6,1.8),
     'angle':(0.,math.pi), 'streak_weight':(0.,.5),
 }
+
+
+def list_flare_templates(folder):
+    """Optional local Flare7K image bank; no download or hidden dependency.
+
+    The fallback analytic halo is used only when folder is None. A specified
+    empty/missing bank is a configuration error, not a silent fallback.
+    """
+    if not folder:
+        return []
+    path=Path(folder).expanduser()
+    if not path.is_dir():
+        raise FileNotFoundError('Flare bank folder not found: '+str(path))
+    extensions={'.png','.jpg','.jpeg','.bmp','.tif','.tiff'}
+    def images(directory):
+        return sorted(str(p.resolve()) for p in directory.rglob('*')
+                      if p.is_file() and p.suffix.lower() in extensions)
+    # Official Flare7K++ uses scattering Compound_Flare, with optional
+    # Reflective_Flare. Core, Streak and Light_Source are components, not
+    # independent complete scattering templates.
+    scattering=path/'Scattering_Flare'
+    reflection=path/'Reflective_Flare'
+    if scattering.is_dir() or reflection.is_dir():
+        compound=scattering/'Compound_Flare'
+        if not compound.is_dir():
+            raise FileNotFoundError('Flare7K++ Compound_Flare folder missing: '+str(compound))
+        scatter=images(compound)
+        if not scatter:
+            raise ValueError('No Compound_Flare images found: '+str(compound))
+        reflected=images(reflection) if reflection.is_dir() else []
+        if reflection.is_dir() and not reflected:
+            raise ValueError('Reflective_Flare folder contains no images: '+str(reflection))
+        return scatter+reflected
+    files=images(path)  # Backward compatible with a custom flat image bank.
+    if not files:
+        raise ValueError('Flare bank contains no image templates: '+str(path))
+    return files
+
+
+@lru_cache(maxsize=256)
+def _flare_gray(path):
+    """Decode a template once to 128x128 luminance, preserving original shape."""
+    a=cv2.imread(str(path),cv2.IMREAD_COLOR)
+    if a is None:
+        raise FileNotFoundError('Cannot decode flare template: '+str(path))
+    a=cv2.resize(a,(128,128),interpolation=cv2.INTER_AREA)
+    a=cv2.cvtColor(a,cv2.COLOR_BGR2GRAY).astype(np.float32)/255.0
+    if not np.isfinite(a).all() or float(a.max())<=0:
+        raise ValueError('Flare template is empty/invalid: '+str(path))
+    return a
 
 
 def to_linear(rgb):
@@ -27,7 +81,7 @@ def to_srgb(x):
     return torch.where(x<=.0031308,12.92*x,1.055*x**(1/2.4)-.055)
 
 
-def sample_parameters(seed, ranges=None):
+def sample_parameters(seed, ranges=None, flare_templates=None):
     spec=dict(DEFAULT_RANGES)
     if ranges:
         unknown=set(ranges)-spec.keys()
@@ -49,6 +103,18 @@ def sample_parameters(seed, ranges=None):
     params['seed']=int(seed)
     params['sources']=[{k:draw(k) for k in ('u','v','radius','amplitude','aspect','angle','streak_weight')}
                        for _ in range(int(rng.integers(lo,hi+1)))]
+    if flare_templates:
+        bank=sorted(str(p) for p in flare_templates)
+        scatter=[p for p in bank if 'Reflective_Flare' not in Path(p).parts]
+        reflected=[p for p in bank if 'Reflective_Flare' in Path(p).parts]
+        if not scatter:
+            raise ValueError('At least one scattering flare template is required')
+        for source in params['sources']:
+            source['template']=scatter[int(rng.integers(len(scatter)))]
+            # Optional reflection: 50% is an experimental knob, not an
+            # estimated frequency of reflections in real road scenes.
+            if reflected and rng.random()<0.5:
+                source['reflective_template']=reflected[int(rng.integers(len(reflected)))]
     return params
 
 
@@ -63,10 +129,26 @@ def flare_field(img, sources, compact=False):
         c=math.cos(s['angle']);sn=math.sin(s['angle'])
         xr=c*dx+sn*dy;yr=-sn*dx+c*dy;r=s['radius']*scale
         radius2=(xr/(r*s['aspect']))**2+(yr/r)**2
-        halo=torch.exp(-.5*radius2)
-        streak=torch.exp(-.5*((xr/(3*r))**2+(yr/(.12*r))**2))
-        psf=halo+s['streak_weight']*streak
-        if compact:psf=torch.where(radius2<=9,psf,torch.zeros_like(psf))
+        if 'template' in s:
+            # Flare7K already supplies the optical shape: avoid re-imposing a
+            # Gaussian/streak on it. Image-plane radius is NOT distance in m.
+            template=torch.as_tensor(_flare_gray(s['template']),device=img.device,dtype=img.dtype)[None,None]
+            grid=torch.stack((xr/(r*s['aspect']),yr/r),dim=-1)[None]
+            psf=F.grid_sample(template,grid,mode='bilinear',padding_mode='zeros',align_corners=True)[0,0]
+            if 'reflective_template' in s:
+                reflection=torch.as_tensor(_flare_gray(s['reflective_template']),
+                                           device=img.device,dtype=img.dtype)[None,None]
+                reflection=F.grid_sample(reflection,grid,mode='bilinear',
+                                         padding_mode='zeros',align_corners=True)[0,0]
+                psf=(psf+0.5*reflection).clamp(0,1)
+            if compact:
+                psf=torch.where(radius2<=1,psf,torch.zeros_like(psf))
+        else:
+            # Explicit analytic fallback when external assets are not supplied.
+            halo=torch.exp(-.5*radius2)
+            streak=torch.exp(-.5*((xr/(3*r))**2+(yr/(.12*r))**2))
+            psf=halo+s['streak_weight']*streak
+            if compact:psf=torch.where(radius2<=9,psf,torch.zeros_like(psf))
         field=field+s['amplitude']*psf[None,None]
     return field
 

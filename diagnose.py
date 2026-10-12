@@ -14,7 +14,7 @@ from utils.config import load_config, project_path
 from datasets.common import rgb
 from models.depth_model import DepthModel
 from analysis.sampling import select_samples, save_selection, stable_seed
-from analysis.degradation_v2.pipeline import CONDITIONS, sample_parameters, degrade
+from analysis.degradation_v2.pipeline import CONDITIONS, sample_parameters, degrade, list_flare_templates
 from analysis.relations import relation_vector, spearman, affine_fit, affine_error, ordinal_error
 from analysis.statistics import save_statistics, write_csv
 
@@ -28,6 +28,7 @@ def main():
     p.add_argument('--seed',type=int,default=42)
     p.add_argument('--repeats',type=int,default=2)
     p.add_argument('--sample-list',help='Reuse samples.txt exactly, within the allowed day split')
+    p.add_argument('--flare-dir',help='Optional Flare7K scattering/reflective image folder; otherwise analytic fallback')
     p.add_argument('--prepare-only',action='store_true',help='Audit/select RGB without loading DAV2 weights')
     p.add_argument('--save_vis',action='store_true')
     p.add_argument('--num_vis_per_condition',type=int,default=3)
@@ -35,11 +36,18 @@ def main():
     if a.repeats<1:raise ValueError('repeats must be positive')
     if len(set(a.conditions))!=len(a.conditions):raise ValueError('Duplicate conditions')
     cfg=load_config(a.config);d=cfg['data'];m=cfg['model']
+    flare_path=a.flare_dir or cfg.get('diagnosis',{}).get('flare_dir')
+    # Selection-only mode must work without Flare7K assets or DAV2 weights.
+    templates=(list_flare_templates(project_path(flare_path) if flare_path else None)
+               if not a.prepare_only else [])
     out=project_path(a.out);out.mkdir(parents=True,exist_ok=True)
     selected,audit=select_samples(cfg,a.limit,a.seed,a.sample_list)
     save_selection(out,selected,audit)
     (out/'run.yaml').write_text(yaml.safe_dump(dict(config=cfg,arguments=vars(a),
-        estimand='group-balanced synthetic consistency; not real-world GT accuracy'),sort_keys=False))
+        estimand='group-balanced synthetic consistency; not real-world GT accuracy',
+        flare_backend=('sampling only; no templates loaded' if a.prepare_only else
+                       'Flare7K++ compound/reflective' if templates else 'analytic fallback'),
+        flare_template_count=len(templates)),sort_keys=False))
     if a.prepare_only:
         print('Selected',len(selected),'images; inspect',out/'sampling_coverage.csv');return
     device='cuda' if torch.cuda.is_available() else 'cpu'
@@ -59,7 +67,8 @@ def main():
             clean_sham=affine_error(net.decode(xc,list(fc),clean.shape[-2:]),dc)
             for repeat in range(a.repeats):
                 seed=stable_seed(a.seed,sample['id'],repeat)
-                params=sample_parameters(seed,cfg.get('diagnosis',{}).get('degradation_ranges'))
+                params=sample_parameters(seed,cfg.get('diagnosis',{}).get('degradation_ranges'),
+                                         flare_templates=templates)
                 for i,source in enumerate(params['sources']):
                     parameters.append(dict(id=sample['id'],repeat=repeat,parameter_seed=seed,
                         exposure=params['exposure'],shot_peak=params['shot_peak'],read_sigma=params['read_sigma'],

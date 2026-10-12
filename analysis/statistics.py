@@ -7,8 +7,11 @@ from .degradation_v2.pipeline import CONDITIONS
 
 def write_csv(path, rows):
     if not rows:return
+    # Reflection templates are optional per sampled source. Later rows may
+    # add reflective_template, so use the union of keys rather than row 0.
+    columns=list(dict.fromkeys(key for row in rows for key in row))
     with open(path,'w',newline='') as f:
-        w=csv.DictWriter(f,fieldnames=list(rows[0]));w.writeheader();w.writerows(rows)
+        w=csv.DictWriter(f,fieldnames=columns);w.writeheader();w.writerows(rows)
 
 
 def factorial_effects(rows, metric='depth_drift'):

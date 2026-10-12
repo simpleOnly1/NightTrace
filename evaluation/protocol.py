@@ -22,11 +22,19 @@ def eval_pair(depth, gt, min_depth=1e-5, max_depth=60.0, align='median', valid_m
     if pred.shape!=gt.shape:
         # STEPS: prediction resized to GT by nearest, never vice versa.
         pred=cv2.resize(pred,(gt.shape[1],gt.shape[0]),interpolation=cv2.INTER_NEAREST)
-    valid=(gt>min_depth)&(gt<max_depth)&np.isfinite(gt)&np.isfinite(pred)&(pred>0)
+    # A corrupt prediction must not make a difficult valid-GT pixel disappear.
+    # STEPS masks by GT only; excluding invalid predictions silently biases results.
+    valid=(gt>min_depth)&(gt<max_depth)&np.isfinite(gt)
     if valid_mask is not None:
+        valid_mask=np.asarray(valid_mask)
+        if valid_mask.shape!=gt.shape:
+            raise ValueError('valid_mask must match the aligned GT grid')
         valid &= valid_mask.astype(bool)
     if not valid.any():
         raise ValueError('Zero evaluable ground-truth pixels')
+    invalid_pred=valid & (~np.isfinite(pred) | (pred<=0))
+    if invalid_pred.any():
+        raise ValueError('%d nonfinite/nonpositive predictions at valid GT pixels' % int(invalid_pred.sum()))
     pv=pred[valid].copy()
     gv=gt[valid].copy()
     if align=='median':
