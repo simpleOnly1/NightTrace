@@ -1,5 +1,10 @@
 # NightTrace
 
+**2026-10-15：强度扫描与失效边界。** 推荐使用 `diagnose_severity.py`：先用
+`--render-only --save-vis` 审查 S0–S4 输入，再用 `--source day-test` 评估真实 GT。
+详见 [运行指南与科学解释边界](docs/severity_boundary.md)。旧 `diagnose.py` 保留
+原有参数分布与 DPT swaps，便于复现历史结果。
+
 **Nighttime degradation propagation in monocular depth foundation encoders**
 
 这是我们自己的单仓库：**ACDepth 的目录组织 + STEPS 的数据/评估协议 + 原版 DAV2-L + NightTrace 退化机理研究**。
@@ -215,3 +220,4 @@ python tests/test_parity_local.py
 ## 9. 引用与边界
 
 使用 STEPS 的数学评估/组织规范并适配成项目内 native 模块，不再保留老版训练框架的 MMCV/Lightning 依赖。官方 DAV2 包与 STEPS split 由一次性工具直接导入适当的最终目录，参见 [ATTRIBUTION.md](ATTRIBUTION.md)。正式发表指标前完成真实数据集上的样本、裁剪、评估等价性审计，参见 [PROJECT_STATUS.md](PROJECT_STATUS.md)。
+
