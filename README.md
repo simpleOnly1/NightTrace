@@ -1,5 +1,12 @@
 # NightTrace
 
+**2026-10-15：研究阶段与可执行流程。** 从 [研究执行手册](docs/research_workflow.md)
+开始：每个阶段的目标、命令、产物、通过条件和解释边界均在那里。
+`diagnose_severity.py` 默认完整八条件，支持密集剂量、完整 day-test、分片和续跑；
+`tools/summarize_sweep.py` 独立汇总检查点、拟合 GT 曲线并比较联合退化边界。
+有 GT 的正确性与无 GT 的大规模稳定性分别统计；完整几何标签与逐阶段机制管线尚待实现。
+合成细节见 [协议说明](docs/severity_boundary.md)。旧 `diagnose.py` 保留旧分布与 DPT swaps。
+
 **Nighttime degradation propagation in monocular depth foundation encoders**
 
 这是我们自己的单仓库：**ACDepth 的目录组织 + STEPS 的数据/评估协议 + 原版 DAV2-L + NightTrace 退化机理研究**。
@@ -215,3 +222,4 @@ python tests/test_parity_local.py
 ## 9. 引用与边界
 
 使用 STEPS 的数学评估/组织规范并适配成项目内 native 模块，不再保留老版训练框架的 MMCV/Lightning 依赖。官方 DAV2 包与 STEPS split 由一次性工具直接导入适当的最终目录，参见 [ATTRIBUTION.md](ATTRIBUTION.md)。正式发表指标前完成真实数据集上的样本、裁剪、评估等价性审计，参见 [PROJECT_STATUS.md](PROJECT_STATUS.md)。
+
