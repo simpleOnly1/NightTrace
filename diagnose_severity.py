@@ -1,6 +1,6 @@
 """Reproducible input dose audit and optional independent-GT failure sweep.
 
-Start with --render-only. Default: 1 clean + 4 conditions x 4 doses = 17
+Start with --render-only. Default: 1 clean + 7 conditions x 4 doses = 29
 forward passes per image/repeat (clean inference is cached across repeats).
 """
 import argparse
@@ -14,14 +14,14 @@ import torch
 import yaml
 from datasets.common import rgb, original_size
 from analysis.sampling import select_samples, save_selection, stable_seed
-from analysis.statistics import write_csv
 from analysis.degradation_v2.pipeline import CONDITIONS, list_flare_templates
 from analysis.degradation_v2.severity import (DEFAULT_PROFILE, DEFAULT_GEOMETRY,
     VERSION, validate_profile, sample_plan, at_severity, render, audit_input)
-from analysis.failure_boundary import gt_pairs, evaluate_gt, save_sweep_statistics
+from analysis.failure_boundary import gt_pairs, evaluate_gt
 from analysis.relations import affine_error, ordinal_error
 from evaluation.protocol import prepare_gt
 from utils.config import load_config, project_path
+from analysis.sweep_store import atomic_json, initialize, read_checkpoint, checkpoint_path
 
 
 def file_sha256(path):
@@ -71,7 +71,18 @@ def load_gt(sample, cfg):
 def run(args, net=None):
     if args.repeats < 1 or args.num_vis < 0:
         raise ValueError('Positive repeats and nonnegative num-vis required')
-    levels = sorted(args.levels)
+    if args.levels is not None and args.level_step is not None:
+        raise ValueError('Choose --levels or --level-step, not both')
+    if args.level_step is not None:
+        if not np.isfinite(args.level_step) or not .001 <= args.level_step <= 4:
+            raise ValueError('level-step must be finite in [.001,4]')
+        levels = sorted(set([round(float(s), 8) for s in np.arange(args.level_step, 4, args.level_step)] + [4.]))
+    else:
+        levels = sorted(args.levels if args.levels is not None else [1., 2., 3., 4.])
+    if args.num_shards < 1 or not 0 <= args.shard_index < args.num_shards:
+        raise ValueError('Require 0 <= shard-index < num-shards')
+    if args.resume and args.prepare_only:
+        raise ValueError('prepare-only outputs are selection manifests, not resumable inference runs')
     if len(set(levels)) != len(levels) or not levels or not all(np.isfinite(s) and 0 < s <= 4 for s in levels):
         raise ValueError('Use distinct levels in (0,4]; S0 clean is automatic')
     if len(set(args.conditions)) != len(args.conditions):
@@ -90,10 +101,20 @@ def run(args, net=None):
     # Validate geometry even in prepare-only mode.
     sample_plan(args.seed, geometry=geometry_ranges)
     out = project_path(args.out)
-    if out.exists() and any(out.iterdir()):
+    if out.exists() and any(out.iterdir()) and not args.resume:
         raise ValueError('Output directory is not empty; choose a new run directory')
     candidate_rows = evaluation_candidates(cfg) if args.source == 'day-test' else None
-    selected, audit = select_samples(cfg, args.limit, args.seed, args.sample_list, candidate_rows)
+    if args.all_split:
+        if args.source != 'day-test' or args.sample_list or args.limit != 0:
+            raise ValueError('--all-split requires day-test, --limit 0 and no sample-list')
+        selected = candidate_rows
+        audit = [dict(group=g, candidates=sum(r['group'] == g for r in selected),
+                      selected=sum(r['group'] == g for r in selected), time_rejected=0, duplicate_rejected=0)
+                 for g in sorted({r['group'] for r in selected})]
+    else:
+        selected, audit = select_samples(cfg, args.limit, args.seed, args.sample_list, candidate_rows)
+    if not selected or len({s['id'] for s in selected}) != len(selected):
+        raise ValueError('Selection must contain nonempty, unique image IDs')
     if args.groups_csv:
         import csv
         with Path(args.groups_csv).open(encoding='utf-8-sig', newline='') as f:
@@ -104,7 +125,10 @@ def run(args, net=None):
         for r in selected:
             r['group'] = mapping[r['id']]
     out.mkdir(parents=True, exist_ok=True)
-    save_selection(out, selected, audit)
+    if not args.resume:
+        save_selection(out, selected, audit)
+    all_selected = selected
+    selected = [s for i, s in enumerate(all_selected) if i % args.num_shards == args.shard_index]
     ev = cfg['eval']; minimum, maximum = ev['min_depth'], ev['max_depth']
     gt_audit = []
     if args.source == 'day-test':
@@ -116,7 +140,8 @@ def run(args, net=None):
                 raise ValueError('No evaluable GT for '+sample['id'])
             gt_audit.append(dict(id=sample['id'], gt_path=sample['gt_path'],
                                  valid_pixels=int(valid.sum()), **geometry))
-        (out/'gt_geometry.json').write_text(json.dumps(gt_audit, indent=2), encoding='utf-8')
+        if not args.resume:
+            (out/'gt_geometry.json').write_text(json.dumps(gt_audit, indent=2), encoding='utf-8')
     flare_dir = args.flare_dir or cfg.get('diagnosis', {}).get('flare_dir')
     templates = [] if args.prepare_only or args.analytic_flare or not any('G' in c for c in args.conditions) else list_flare_templates(project_path(flare_dir) if flare_dir else None)
     metadata = dict(version=VERSION, config=cfg, arguments=vars(args), profile=profile,
@@ -129,10 +154,13 @@ def run(args, net=None):
         noise_coupling='same seeds; separate read stream; Poisson marginals, not matched photon events',
         software=dict(torch=str(torch.__version__), numpy=str(np.__version__)),
         status='prepared' if args.prepare_only else 'running')
-    (out/'run.yaml').write_text(yaml.safe_dump(metadata, sort_keys=False), encoding='utf-8')
+    if not args.resume:
+        (out/'run.yaml').write_text(yaml.safe_dump(metadata, sort_keys=False), encoding='utf-8')
     if args.prepare_only:
         print('Selected', len(selected), 'images into', out); return []
     device = args.device if args.device != 'auto' else ('cuda' if torch.cuda.is_available() else 'cpu')
+    if args.render_only:
+        net = None
     if net is None and not args.render_only:
         from models.depth_model import DepthModel
         net = DepthModel(str(project_path(m['weights'])), input_size=m.get('input_size', 518),
@@ -144,15 +172,35 @@ def run(args, net=None):
     metadata['code_sha256'] = {p: file_sha256(Path(__file__).parent/p) for p in (
         'diagnose_severity.py', 'analysis/degradation_v2/pipeline.py',
         'analysis/degradation_v2/severity.py', 'analysis/failure_boundary.py',
+        'analysis/sweep_store.py', 'analysis/sampling.py', 'datasets/common.py',
+        'datasets/robotcar.py', 'datasets/nuscenes.py',
         'models/depth_net.py', 'evaluation/protocol.py')}
     weights = project_path(m['weights'])
     metadata['weights_sha256'] = file_sha256(weights) if net is not None and weights.is_file() else None
+    contract = dict(schema=2, config=cfg, profile=profile, geometry=geometry_ranges,
+        samples=[{k: str(v) if isinstance(v, Path) else v for k, v in s.items()} for s in all_selected],
+        source=args.source, seed=args.seed, levels=levels, conditions=args.conditions,
+        repeats=args.repeats, pairs=args.pairs, pair_gap=args.pair_gap, min_pairs=args.min_pairs,
+        failure_delta=args.failure_delta, render_only=args.render_only, device=device,
+        software=metadata['software'], code_sha256=metadata['code_sha256'], weights_sha256=metadata['weights_sha256'],
+        template_bank_sha256=hashlib.sha256('\n'.join(templates).encode()).hexdigest(),
+        num_shards=args.num_shards, shard_index=args.shard_index)
+    initialize(out, contract, args.resume)
     (out/'run.yaml').write_text(yaml.safe_dump(metadata, sort_keys=False), encoding='utf-8')
-    rows = []; parameters = []; hashes = {}; input_hashes = []; warnings = []
-    with torch.no_grad(), (out/'parameters.jsonl').open('w', encoding='utf-8') as journal:
+    with torch.no_grad():
         for index, sample in enumerate(selected):
-            input_hashes.append(dict(id=sample['id'], rgb_sha256=file_sha256(sample['path']),
-                gt_sha256=file_sha256(sample['gt_path']) if args.source == 'day-test' else None))
+            input_hash = dict(id=sample['id'], rgb_sha256=file_sha256(sample['path']),
+                gt_sha256=file_sha256(sample['gt_path']) if args.source == 'day-test' else None)
+            previous = read_checkpoint(out, sample['id']) if args.resume else None
+            if previous is not None:
+                if previous['input_hash'] != input_hash:
+                    raise ValueError('Input changed since checkpoint: '+sample['id'])
+                for path, digest in previous['template_hashes'].items():
+                    if file_sha256(path) != digest:
+                        raise ValueError('Flare template changed since checkpoint: '+path)
+                print(f'[{index+1}/{len(selected)}] verified; skipped {sample["id"]}', flush=True)
+                continue
+            rows = []; parameters = []; hashes = {}; warnings = []; parameter_records = []
             clean, _ = rgb(sample['path'], (d['input_height'], d['input_width']), crop=crop)
             clean = clean[None].to(device)
             qc = net(clean)['raw_relative'] if net is not None else None
@@ -181,7 +229,7 @@ def run(args, net=None):
                     # Serialize one parameter record per dose, not duplicate per condition.
                     if cond in ('clean', args.conditions[0]):
                         record = dict(id=sample['id'], repeat=repeat, **params)
-                        journal.write(json.dumps(record)+'\n'); journal.flush()
+                        parameter_records.append(record)
                         for i, source in enumerate(params['sources']):
                             parameters.append(dict(id=sample['id'], repeat=repeat, severity=severity,
                                 parameter_seed=seed, exposure=params['exposure'], shot_peak=params['shot_peak'],
@@ -224,20 +272,21 @@ def run(args, net=None):
                     from visualization.severity import save_sweep_panels
                     save_sweep_panels(out/'qualitative'/str(seed), frames, predictions, vis_rows,
                                       args.conditions, levels, sample['id'])
-            # Checkpoint completed images; no silent resume into mixed configurations.
-            write_csv(out/'per_image.csv', rows); write_csv(out/'parameters.csv', parameters)
+            atomic_json(checkpoint_path(out, sample['id']), dict(id=sample['id'], complete=True,
+                rows=rows, parameters=parameters, parameter_records=parameter_records,
+                input_hash=input_hash, template_hashes=hashes, warnings=warnings))
             print(f'[{index+1}/{len(selected)}] {sample["id"]}', flush=True)
-    (out/'template_sha256.json').write_text(json.dumps(hashes, indent=2), encoding='utf-8')
-    (out/'input_sha256.json').write_text(json.dumps(input_hashes, indent=2), encoding='utf-8')
-    write_csv(out/'audit_warnings.csv', warnings)
-    metadata['input_audit_warning_count'] = len(warnings)
-    save_sweep_statistics(out, rows, args.seed, args.failure_delta)
-    from visualization.severity import save_response_curves
-    save_response_curves(out)
-    metadata['status'] = 'complete'
+    metadata['status'] = 'inference_complete'
     (out/'run.yaml').write_text(yaml.safe_dump(metadata, sort_keys=False), encoding='utf-8')
-    print('Saved', len(rows), 'paired records to', out)
-    return rows
+    if not args.defer_summary and args.num_shards == 1:
+        from analysis.sweep_summary import summarize_runs
+        summarize_runs([out], out, allow_existing=True, curves=False)
+        metadata['status'] = 'complete'
+        (out/'run.yaml').write_text(yaml.safe_dump(metadata, sort_keys=False), encoding='utf-8')
+        # Preserve the small-run/test API; large runs must use --defer-summary.
+        return [r for s in selected for r in read_checkpoint(out, s['id'])['rows']]
+    print('Checkpoints complete; summarize all shards with tools/summarize_sweep.py')
+    return []
 
 
 def parser():
@@ -245,9 +294,15 @@ def parser():
     p.add_argument('--config', required=True)
     p.add_argument('--source', choices=['day-train', 'day-test'], default='day-train', help='day-test enables independent GT')
     p.add_argument('--profile', help='YAML with profile (S0..S4) and optional geometry ranges')
-    p.add_argument('--levels', nargs='+', type=float, default=[1., 2., 3., 4.], help='Fractional levels refine the sampled bracket')
-    p.add_argument('--conditions', nargs='+', choices=CONDITIONS[1:], default=['L', 'N', 'G', 'LNG'])
+    p.add_argument('--levels', nargs='+', type=float, help='Explicit dose points; default 1 2 3 4')
+    p.add_argument('--level-step', type=float, help='Dense grid: .25 gives 16 nonzero doses up to S4')
+    p.add_argument('--conditions', nargs='+', choices=CONDITIONS[1:], default=list(CONDITIONS[1:]))
     p.add_argument('--limit', type=int, default=16)
+    p.add_argument('--all-split', action='store_true', help='Full unfiltered day-test; requires --limit 0')
+    p.add_argument('--resume', action='store_true', help='Verify contract and hashes, skip completed images')
+    p.add_argument('--num-shards', type=int, default=1)
+    p.add_argument('--shard-index', type=int, default=0)
+    p.add_argument('--defer-summary', action='store_true', help='Bound inference memory; merge checkpoints separately')
     p.add_argument('--sample-list', help='Exact IDs within the chosen source split; not truncated by limit')
     p.add_argument('--groups-csv', help='Optional id,group mapping; apply true scene groups to statistics')
     p.add_argument('--out', default='runs/severity')

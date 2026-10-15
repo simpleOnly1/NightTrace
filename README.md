@@ -1,9 +1,11 @@
 # NightTrace
 
-**2026-10-15：强度扫描与失效边界。** 推荐使用 `diagnose_severity.py`：先用
-`--render-only --save-vis` 审查 S0–S4 输入，再用 `--source day-test` 评估真实 GT。
-详见 [运行指南与科学解释边界](docs/severity_boundary.md)。旧 `diagnose.py` 保留
-原有参数分布与 DPT swaps，便于复现历史结果。
+**2026-10-15：研究阶段与可执行流程。** 从 [研究执行手册](docs/research_workflow.md)
+开始：每个阶段的目标、命令、产物、通过条件和解释边界均在那里。
+`diagnose_severity.py` 默认完整八条件，支持密集剂量、完整 day-test、分片和续跑；
+`tools/summarize_sweep.py` 独立汇总检查点、拟合 GT 曲线并比较联合退化边界。
+有 GT 的正确性与无 GT 的大规模稳定性分别统计；完整几何标签与逐阶段机制管线尚待实现。
+合成细节见 [协议说明](docs/severity_boundary.md)。旧 `diagnose.py` 保留旧分布与 DPT swaps。
 
 **Nighttime degradation propagation in monocular depth foundation encoders**
 

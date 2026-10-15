@@ -1,5 +1,8 @@
 # NightTrace：从弱退化诊断到失效边界扫描
 
+**当前完整步骤、阶段目标和新增分片/拟合命令见 [研究执行手册](research_workflow.md)。**
+本文保留合成与指标的详细定义。
+
 `diagnose_severity.py` 是本阶段推荐入口。旧 `diagnose.py` 保留原有参数分布和
 DPT oracle swap，用于复现旧实验；不要把旧参数范围当成新的严重度扫描。
 
@@ -73,7 +76,7 @@ day-test，会检查真实 GT 的存在与 FOV。
 
 若最高请求剂量的可见 flare 覆盖 <1%、N 的 RMS <.02、L 的亮度中位数 >.1，
 或近黑/饱和面积 >95%，生成 `audit_warnings.csv`。这些阈值是审查提示，
-不删除样本、不自动调参、不重抽模板；无提示时不生成该文件。
+不删除样本、不自动调参、不重抽模板；无提示时该文件为空。
 
 ## 再跑预测漂移或真实 GT 评价
 
@@ -148,9 +151,9 @@ python diagnose_severity.py --config config/robotcar.yaml \
 
 细化后的区间仍是探索结果，不能拿同一批图作为独立确认。
 
-默认四条件不足以估计三因素交互。需要时显式指定：
-`--conditions L N G LN LG NG LNG`，程序才输出 GT ordering/AbsRel 的
-逐档因子交互表。每个指标的交互是该误差尺度上的差分，不是联合总效应。
+现在默认 `--conditions L N G LN LG NG LNG`，加自动 clean 即完整八条件，
+输出 GT ordering/AbsRel 的逐档交互表。若手动删掉部分条件，则不能计算完整因子交互。
+每个指标的交互是该误差尺度上的差分，不是联合总效应。
 
 ## 分组、开销和输出
 
@@ -161,16 +164,21 @@ scene token。可传 `--groups-csv`（列 `id,group`，ID 与 samples.txt 一致
 只有一个组时 CI 为 NaN；不要把像素对或 repeats 数当成独立场景数。
 程序不自动建立 fit/exploration/confirmation 的 scene 隔离。
 
-默认每图每 repeat 17 条记录，clean 推理跨 repeat 缓存，所以实际前向为
-`1 + 16*repeats`。七条件时为 `1 + 28*repeats`。本扫描不执行多次 DPT swap；
+默认每图每 repeat 29 条记录，clean 推理跨 repeat 缓存，所以实际前向为
+`1 + 28*repeats`。一般为 `1 + 7*K*repeats`，K 为非零剂量数。
+`--level-step .25` 得到 16 个非零剂量。本扫描不执行多次 DPT swap；
 发现可复现区间后再用既有机制探针定位，不预设某层一定损坏。
 
 输出包含 samples、run.yaml、parameters.csv/jsonl、per_image.csv、
 summary.csv、response_curves.png，以及有 GT 才生成的边界表。
 run.yaml 保存全部剂量、参数、软件版本和实现/权重 SHA256；
 input_sha256.json、template_sha256.json 保存实际输入/GT/用到的模板哈希。
-每完成一张基图写出 CSV；中断时 status 保留 running。不支持混入旧目录的
-自动续跑，非空输出目录会被拒绝。
+每完成一张基图原子写入 checkpoints；中断时 status 保留 running。
+相同命令加 `--resume` 会核对合同及已完成输入哈希再续跑；未完成基图重算。
+未指定 resume 时拒绝非空输出目录。旧格式无 contract/checkpoints 的目录不能续跑。
+小批运行结束自动汇总；大规模使用 `--defer-summary`，然后通过
+`tools/summarize_sweep.py` 流式合并和拟合。分片必须齐全且合同一致。
+拟合输出与条件性越阈区间的解释见研究执行手册，不能与上述经验区间混淆。
 
 新 q 面板同图跨条件、跨剂量共享 clean P5–P95；误差图统一显示
 `abs(q-q_clean)/clean_MAD` 的 [0,1] 区间并带 colorbar，超过1会饱和着色，
