@@ -1,3 +1,14 @@
+# NightTrace build status — 2026-10-27
+
+当前步骤见 [nuScenes 小批执行说明](docs/nuscenes_pilot.md)。研究允许不同基础模型具有不同失效原因；共同原因是可能的结果，不是前提或验收条件。
+
+- 已有用户提供并分析的 RobotCar＋DAV2 先导扫描及过渡区复核；其解释范围限于对应模型、数据和合成路径。
+- 本轮新增 `tools/run_nuscenes_pilot.py`：显式 audit / pilot / summarize 阶段，八条件、最多八张默认基图、无拟合汇总、恢复及执行状态记录。软件测试通过不等价于 nuScenes GPU 实验完成。
+- nuScenes 尚待服务器运行和核验；UniDepth V2、Marigold V2 尚未接入统一实验入口。只改配置模型名称不能替代适配。
+- 后续按各模型实测结果分析各自原因，进行针对性优化、真实夜间评价，再验证向一个下游方法迁移；不预设统一机制。
+
+## 历史实现记录（当时状态）
+
 # NightTrace build status — 2026-10-15
 
 最新执行顺序见 [研究执行手册](docs/research_workflow.md)。严重度入口现在默认八条件，

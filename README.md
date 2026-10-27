@@ -1,5 +1,7 @@
 # NightTrace
 
+**2026-10-27：当前执行 DAV2＋nuScenes 小批实验。** 见 [执行说明](docs/nuscenes_pilot.md)。跨模型研究允许失效原因相同或不同，不将共性作为前提；新模型适配随后逐步完成。
+
 **2026-10-15：研究阶段与可执行流程。** 从 [研究执行手册](docs/research_workflow.md)
 开始：每个阶段的目标、命令、产物、通过条件和解释边界均在那里。
 `diagnose_severity.py` 默认完整八条件，支持密集剂量、完整 day-test、分片和续跑；
