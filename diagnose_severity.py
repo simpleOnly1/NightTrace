@@ -22,6 +22,7 @@ from analysis.relations import affine_error, ordinal_error
 from evaluation.protocol import prepare_gt
 from utils.config import load_config, project_path
 from analysis.sweep_store import atomic_json, initialize, read_checkpoint, checkpoint_path
+from models.inference import build_inference_model, model_name, prediction_depths
 
 
 def file_sha256(path):
@@ -92,6 +93,7 @@ def run(args, net=None):
     if args.pairs < 1 or args.min_pairs < 1 or args.min_pairs > args.pairs or not np.isfinite(args.pair_gap) or args.pair_gap <= 0:
         raise ValueError('Invalid GT pair policy')
     cfg = load_config(args.config); d = cfg['data']; m = cfg['model']
+    model_name(m)  # Reject unsupported labels instead of silently running DAV2.
     settings = yaml.safe_load(Path(args.profile).read_text(encoding='utf-8')) if args.profile else {}
     settings = settings or {}
     if set(settings) - {'profile', 'geometry'}:
@@ -162,9 +164,7 @@ def run(args, net=None):
     if args.render_only:
         net = None
     if net is None and not args.render_only:
-        from models.depth_model import DepthModel
-        net = DepthModel(str(project_path(m['weights'])), input_size=m.get('input_size', 518),
-            freeze_encoder=True, train_dpt=False, inverse_epsilon=m.get('inverse_epsilon', 1e-3))
+        net = build_inference_model(m)
     if net is not None:
         net = net.to(device).eval(); net.requires_grad_(False)
     crop = (d.get('crop_width', 1152), d.get('crop_height', 640)) if d['name'] == 'robotcar' else None
@@ -174,15 +174,22 @@ def run(args, net=None):
         'analysis/degradation_v2/severity.py', 'analysis/failure_boundary.py',
         'analysis/sweep_store.py', 'analysis/sampling.py', 'datasets/common.py',
         'datasets/robotcar.py', 'datasets/nuscenes.py',
-        'models/depth_net.py', 'evaluation/protocol.py')}
+        'models/depth_net.py', 'models/inference.py', 'models/unidepth_adapter.py', 'evaluation/protocol.py')}
     weights = project_path(m['weights'])
-    metadata['weights_sha256'] = file_sha256(weights) if net is not None and weights.is_file() else None
+    identity = getattr(net, 'inference_metadata', None) if net is not None else None
+    metadata['weights_sha256'] = (identity['weights_sha256'] if identity else
+        file_sha256(weights) if net is not None and weights.is_file() else None)
+    metadata['model_identity'] = identity or dict(name=model_name(m),
+        output=('native metric depth' if model_name(m) == 'unidepth_v2_vitl14' else
+                'relative inverse depth; GT uses 1/max(q, inverse_epsilon)'),
+        gt_distance_alignment='median')
     contract = dict(schema=2, config=cfg, profile=profile, geometry=geometry_ranges,
         samples=[{k: str(v) if isinstance(v, Path) else v for k, v in s.items()} for s in all_selected],
         source=args.source, seed=args.seed, levels=levels, conditions=args.conditions,
         repeats=args.repeats, pairs=args.pairs, pair_gap=args.pair_gap, min_pairs=args.min_pairs,
         failure_delta=args.failure_delta, render_only=args.render_only, device=device,
         software=metadata['software'], code_sha256=metadata['code_sha256'], weights_sha256=metadata['weights_sha256'],
+        model_identity=metadata['model_identity'],
         template_bank_sha256=hashlib.sha256('\n'.join(templates).encode()).hexdigest(),
         num_shards=args.num_shards, shard_index=args.shard_index)
     initialize(out, contract, args.resume)
@@ -203,14 +210,14 @@ def run(args, net=None):
             rows = []; parameters = []; hashes = {}; warnings = []; parameter_records = []
             clean, _ = rgb(sample['path'], (d['input_height'], d['input_width']), crop=crop)
             clean = clean[None].to(device)
-            qc = net(clean)['raw_relative'] if net is not None else None
+            qc, dc = prediction_depths(net(clean), m) if net is not None else (None, None)
             gt = pairs = None
             if args.source == 'day-test' and net is not None:
                 gt, _ = load_gt(sample, cfg)
                 pairs = gt_pairs(gt, minimum, maximum, stable_seed(args.seed, sample['id']), args.pairs, args.pair_gap)
             base_gt = {}
             if gt is not None:
-                base_gt = evaluate_gt(qc.clamp_min(m.get('inverse_epsilon', 1e-3)).reciprocal().cpu().numpy()[0, 0],
+                base_gt = evaluate_gt(dc.cpu().numpy()[0, 0],
                                       gt, pairs, minimum, maximum, args.min_pairs)
             for repeat in range(args.repeats):
                 seed = stable_seed(args.seed, sample['id'], repeat)
@@ -235,9 +242,7 @@ def run(args, net=None):
                                 parameter_seed=seed, exposure=params['exposure'], shot_peak=params['shot_peak'],
                                 read_sigma=params['read_sigma'], glare_gain=params['glare_gain'], source=i, **source))
                     if net is not None:
-                        q = qc if cond == 'clean' else net(dark)['raw_relative']
-                        if not torch.isfinite(q).all() or (q < 0).any():
-                            raise ValueError('Invalid model inverse depth for '+sample['id'])
+                        q, depth = (qc, dc) if cond == 'clean' else prediction_depths(net(dark), m)
                         scale = (qc-qc.median()).abs().median().clamp_min(1e-6)
                         row.update(depth_drift=affine_error(q, qc),
                             raw_q_mae=float((q-qc).abs().mean()),
@@ -245,7 +250,7 @@ def run(args, net=None):
                             clean_ordinal_disagreement=ordinal_error(q, qc, stable_seed(args.seed, sample['id'])))
                         if gt is not None:
                             scores = base_gt if cond == 'clean' else evaluate_gt(
-                                q.clamp_min(m.get('inverse_epsilon', 1e-3)).reciprocal().cpu().numpy()[0, 0],
+                                depth.cpu().numpy()[0, 0],
                                 gt, pairs, minimum, maximum, args.min_pairs)
                             row.update(scores)
                             for key in ('gt_ordinal_error', 'gt_abs_rel', 'gt_a1'):

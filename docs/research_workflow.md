@@ -1,5 +1,7 @@
 # NightTrace 研究执行手册
 
+**2026-10-29 当前步骤：** DAV2 的 RobotCar / nuScenes 全量结果已完成阶段性分析；第二个模型的入口、下载及运行命令见 [UniDepth V2](unidepth_v2.md)。模型之间的失效原因可相同或不同。新配置只接入冻结 severity 扫描，真实权重 GPU 检查待服务器执行。
+
 **2026-10-27 当前步骤与研究范围更新：** 先执行 [DAV2 / nuScenes 小批实验](nuscenes_pilot.md)。RobotCar＋DAV2 是先导证据；跨模型比较不预设共同失效原因。共同或不同机制均按实测结果分析，随后做针对性优化及真实夜间验证。UniDepth V2 / Marigold V2 接口尚待实现。
 
 本研究先冻结 DAV2-L，研究退化剂量与几何错误的关系，再定位错误传播。

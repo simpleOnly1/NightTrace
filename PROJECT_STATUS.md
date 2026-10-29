@@ -1,4 +1,13 @@
-# NightTrace build status — 2026-10-27
+# NightTrace build status — 2026-10-29
+
+当前步骤见 [UniDepth V2 执行说明](docs/unidepth_v2.md)。已收到并分析 DAV2 / nuScenes 全量结果，现接入第二个基础模型。
+
+- UniDepth V2 ViT-L/14 已接入冻结强度扫描，使用官方 infer、RGB-only、本地严格权重加载；原生 metric depth 直接评价，倒数仅用于漂移/可视化。
+- 新增独立配置、固定版本源码准备工具、一张真实权重检查入口及离线下载指南。权重与源码/配置身份纳入推理合同。
+- 37 项 CPU 测试通过，包括新适配器与已有扫描/恢复/分片/指标回归。真实 UniDepth checkpoint 和 GPU 尚未在本环境运行；尚无其失效规律结论。
+- 各模型允许具有相同或不同的失效原因；先测各自响应，再分析并针对性优化。Marigold V2 与下游迁移仍待后续推进。
+
+## 2026-10-27 阶段记录
 
 当前步骤见 [nuScenes 小批执行说明](docs/nuscenes_pilot.md)。研究允许不同基础模型具有不同失效原因；共同原因是可能的结果，不是前提或验收条件。
 

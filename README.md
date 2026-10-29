@@ -1,5 +1,7 @@
 # NightTrace
 
+**2026-10-29：UniDepth V2 ViT-L 接入强度扫描。** 见 [权重下载、环境准备与执行说明](docs/unidepth_v2.md)。支持本地离线权重、RGB-only 官方推理和原生深度 GT 评价；RobotCar / nuScenes 各有独立配置。真实权重 GPU 检查仍需服务器执行，不预设它与 DAV2 的失效原因相同。
+
 **2026-10-27：当前执行 DAV2＋nuScenes 小批实验。** 见 [执行说明](docs/nuscenes_pilot.md)。跨模型研究允许失效原因相同或不同，不将共性作为前提；新模型适配随后逐步完成。
 
 **2026-10-15：研究阶段与可执行流程。** 从 [研究执行手册](docs/research_workflow.md)
