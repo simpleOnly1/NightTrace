@@ -100,11 +100,15 @@ def audit(cfg, out, limit=0, overlays=0):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--config',required=True)
+    p.add_argument('--split',choices=['day','night'],help='Override eval.split for GT auditing')
     p.add_argument('--limit',type=int,default=0,help='0 checks the full official test split')
     p.add_argument('--overlays',type=int,default=0,help='Number of evenly spread sample overlays')
     p.add_argument('--out',default='runs/gt_geometry_audit')
     a=p.parse_args()
-    audit(load_config(a.config),project_path(a.out),a.limit,a.overlays)
+    cfg=load_config(a.config)
+    if a.split:cfg['eval']['split']=a.split
+    audit(cfg,project_path(a.out),a.limit,a.overlays)
 
 
 if __name__=='__main__':main()
+

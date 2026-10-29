@@ -1,0 +1,18 @@
+# Install torch==2.4.1 + torchvision==0.19.1 for your CUDA separately.
+# Frozen inference imports from pinned UniDepth; no training extensions required.
+numpy==1.26.4
+opencv-python==4.10.0.84
+PyYAML
+scipy
+matplotlib
+pandas
+pillow>=10.2
+einops>=0.7
+timm>=1.0,<2
+huggingface-hub>=0.22,<1
+safetensors>=0.4
+tqdm
+termcolor
+tabulate
+trimesh
+wandb
