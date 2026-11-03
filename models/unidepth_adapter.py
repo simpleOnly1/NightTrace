@@ -5,6 +5,8 @@ from importlib import metadata
 from pathlib import Path
 import sys
 
+from models.unidepth_env import activate_extras, check_base_runtime
+activate_extras()
 import torch
 from torch import nn
 
@@ -34,8 +36,7 @@ def checkpoint_files(directory):
 class UniDepthV2Adapter(nn.Module):
     def __init__(self, directory, resolution_level=9):
         super().__init__()
-        if sys.version_info < (3, 10):
-            raise RuntimeError('Official UniDepth V2 requires Python >=3.10; use a separate environment')
+        check_base_runtime()
         if type(resolution_level) is not int or not 0 <= resolution_level <= 9:
             raise ValueError('resolution_level must be an integer in [0,9]')
         config_path, weights_path = checkpoint_files(directory)
@@ -85,6 +86,8 @@ class UniDepthV2Adapter(nn.Module):
             weights_file=str(weights_path), weights_sha256=sha256(weights_path),
             config_sha256=sha256(config_path), upstream_expected_commit=UPSTREAM_COMMIT,
             source_sha256=source_hashes, package_versions=versions)
+        self.inference_metadata['python'] = sys.version
+        self.inference_metadata['compatibility'] = 'NightTrace Python 3.8 annotation backport; official upstream declares >=3.10'
 
     def train(self, mode=True):
         # This adapter deliberately exposes no fine-tuning or DAV2 feature-swap API.

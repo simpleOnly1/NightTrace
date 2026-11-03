@@ -175,6 +175,9 @@ def run(args, net=None):
         'analysis/sweep_store.py', 'analysis/sampling.py', 'datasets/common.py',
         'datasets/robotcar.py', 'datasets/nuscenes.py',
         'models/depth_net.py', 'models/inference.py', 'models/unidepth_adapter.py', 'evaluation/protocol.py')}
+    if model_name(m) == 'unidepth_v2_vitl14':
+        metadata['code_sha256']['models/unidepth_env.py'] = file_sha256(
+            Path(__file__).parent/'models/unidepth_env.py')
     weights = project_path(m['weights'])
     identity = getattr(net, 'inference_metadata', None) if net is not None else None
     metadata['weights_sha256'] = (identity['weights_sha256'] if identity else

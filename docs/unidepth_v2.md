@@ -1,6 +1,6 @@
 # UniDepth V2 接入与下一步实验
 
-更新：2026-10-29。本轮将官方 UniDepth V2 ViT-L/14 接入 NightTrace 的冻结八条件强度扫描。允许它与 DAV2 具有相同或不同的失效原因，不预设其危险组合或过渡区。
+更新：2026-11-03。UniDepth V2 ViT-L/14 接入冻结八条件强度扫描，并为现有 Python 3.8 环境提供项目兼容层。允许它与 DAV2 具有相同或不同的失效原因，不预设其危险组合或过渡区。
 
 ## 接口做了什么
 
@@ -43,19 +43,21 @@ NightTrace/models/checkpoints/unidepth_v2_vitl14/
 
 两者取自同一官方模型快照。也支持同页面的 `pytorch_model.bin` 代替 safetensors，无需两个权重文件都下载。不要用 v1、v2old 或其他 backbone 的配置。官方 ViT-L/14 配置的 pixel_encoder.pretrained 应为 null，避免构造时额外下载 DINOv2；本入口会拒绝其他值。
 
-## 3. 独立 Python 3.10 环境与官方源码
+## 3. 继续使用现有 nighttime_ds 环境
 
-现有 nighttime_ds 为 Python 3.8；官方 UniDepth 要求 Python≥3.10。使用单独环境，保留原 DAV2 环境。
+保持现有 Python 3.8、Torch、Torchvision、NumPy、OpenCV 和 SciPy。上游声明 Python≥3.10；本项目将固定源码中的新类型标注转换为 Python 3.8 可用的 typing 标注，并取消推理不需要的可视化模块自动导入。模型计算、预处理和权重名称不改。这是 NightTrace 的兼容方案，不代表上游官方支持 Python 3.8。
 
 ```bash
-conda create -n nighttrace_uni python=3.10 -y
-conda activate nighttrace_uni
-python -m pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu121
-python -m pip install -r requirements-unidepth.txt
+conda activate nighttime_ds
 python tools/prepare_unidepth.py
+python tools/check_unidepth_env.py --install --out runs/uni_env_check.json
 ```
 
-最后一条只下载官方源码，导入本仓库 `models/unidepth/` 并保留许可证，不下载任何权重。源码固定在官方 commit `8d8cfe4c7ee15297099983607febf0d4f32eb3d6`，收据为 `UNIDEPTH_SOURCE_MANIFEST.json`。
+`prepare_unidepth.py` 下载并兼容处理官方源码，导入 `models/unidepth/` 并保留许可证，不下载权重。源码固定在官方 commit `8d8cfe4c7ee15297099983607febf0d4f32eb3d6`；`UNIDEPTH_SOURCE_MANIFEST.json` 记录原始与处理后的文件哈希、兼容版本及修改清单。已经准备过未经修改的同版官方源码，也可以直接重跑，不需要 --force；未知本地修改仍报错。
+
+`check_unidepth_env.py --install` 先检查现有 Torch/Torchvision 接口，再通过 `pip --no-deps --target` 将补充依赖安装到项目内 `.deps/unidepth-py38/`。仅加载 UniDepth 时启用该目录；不写入 conda 环境的 site-packages，也不安装或升级上述核心数值包。之后真实导入 UniDepthV2，并在 JSON 中记录检查前后的核心包版本。不要执行旧文档中创建 Python 3.10 环境或全局安装 requirements 的命令。
+
+现有记录为 Torch 2.4.1+cu121 / NumPy 1.23.5，可保留。检查要求 Torch 的 scaled_dot_product_attention/autocast 和 Torchvision v2 normalize 接口可用；若检查失败，把 `runs/uni_env_check.json` 和终端错误发回，不要先升级环境。
 
 源码也可以离线准备：下载 https://github.com/lpiccinelli-eth/UniDepth/archive/8d8cfe4c7ee15297099983607febf0d4f32eb3d6.zip ，然后执行：
 
@@ -65,7 +67,7 @@ python tools/prepare_unidepth.py --zip /path/to/UniDepth-8d8cfe4c7ee152970999836
 
 本轮只推理，不要求编译训练用 CUDA patch 提取扩展，也不要求安装 xformers；官方相应路径有回退实现。若提示无法运行 original UniDepth V1，不能仅凭该提示判定 V2 不可用；以随后的 smoke 是否成功为准。
 
-额外依赖文件是固定源码下的推理依赖集合，未直接安装包含训练/展示全部依赖的上游 requirements。正式模型在服务器的依赖兼容性由下一步真实 smoke 验证。跨环境的 torch/numpy 等版本会写入元数据，比较时同时核对参数与实际输入统计。
+额外依赖固定为 Python 3.8 可用版本，未安装上游全部训练/展示依赖。无需 wandb、trimesh 或 xformers。正式模型在服务器上的可用性由下一步真实 smoke 验证。Torch/NumPy 等版本和 Python 版本写入元数据。
 
 ## 4. 本轮先执行：一张图真实权重检查
 
@@ -136,7 +138,9 @@ python tools/summarize_sweep.py --runs runs/uni_rc_full_gt \
 
 ## 交付与验证范围
 
-代码测试使用 CPU、小张量和假 UniDepth 类，验证浮点输入与官方 infer 调用参数、本地严格权重加载、冻结、源码身份、原生深度不被 DAV2 截断、GT 排序方向及现有恢复/分片/指标回归。它们不替代真实 checkpoint 或 GPU 验证。
+兼容层已使用真实 Python 3.8.10 完成固定官方 ZIP 的导入、全部 Python 源码编译和纯源码测试；数值语句的 AST 对比确认未修改计算。另在本地 Python 3.10 / Torch 2.0.1 / Torchvision 0.15.2 下，成功真实导入兼容后的 UniDepthV2，核心包版本检查前后一致，并验证 TorchScript 类型标注可用。后者不等于 Python 3.8 的真实权重推理已经通过。
+
+CPU、小张量及假 UniDepth 类测试还覆盖浮点输入、官方 infer 参数、严格权重加载、冻结、源码身份、原生深度语义和现有扫描/恢复/指标回归。
 
 本地未下载 1.42GB 权重、未在本地完成真实 UniDepth 推理，尚无 UniDepth 失效结论。下一步只需完成环境/源码/权重准备，并执行第 4 节真实 smoke，再继续正式扫描。
 
