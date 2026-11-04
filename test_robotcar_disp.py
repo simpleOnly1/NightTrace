@@ -1,4 +1,4 @@
-"""STEPS-compatible RobotCar test entry, using DAV2 relative-depth output contract."""
+"""RobotCar test entry for DAV2 or UniDepth V2, selected by model.name."""
 import argparse
 from test import run
 
@@ -10,6 +10,10 @@ def main():
     p.add_argument('--out',default='evaluation/rc_result')
     p.add_argument('--vis',action='store_true')
     p.add_argument('--limit',type=int,default=0)
+    p.add_argument('--evaluate',action='store_true')
+    p.add_argument('--device',choices=['auto','cpu','cuda'],default='auto')
     a=p.parse_args()
-    run(a.config,a.out,a.checkpoint,a.vis,a.limit,split_override=a.weather)
+    run(a.config,a.out,a.checkpoint,a.vis,a.limit,split_override=a.weather,
+        evaluate=a.evaluate,device=a.device)
 if __name__=='__main__':main()
+

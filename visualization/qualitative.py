@@ -62,7 +62,8 @@ def save_panel(
     swap34_depth,
     degraded_err,
     swap34_err,
-    title=''
+    title='',
+    error_max=None
 ):
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
@@ -73,7 +74,10 @@ def save_panel(
     q=depth_to_numpy(clean_depth)
     limits=(float(np.percentile(q,5)),float(np.percentile(q,95)))
     if limits[1]<=limits[0]:limits=(limits[0],limits[0]+1e-6)
-    error_max=max(float(np.percentile(depth_to_numpy(degraded_err),95)),1e-8)
+    # A fixed clean-reference scale permits comparisons across conditions.
+    # Legacy per-condition P95 scaling made tiny drift look as large as failure.
+    if error_max is None:
+        error_max=max(float(np.median(np.abs(q-np.median(q)))),1e-6)
     clean_depth_np = colorize_depth(clean_depth,limits=limits)
     degraded_depth_np = colorize_depth(degraded_depth,limits=limits)
     swap4_depth_np = colorize_depth(swap4_depth,limits=limits)
@@ -103,8 +107,8 @@ def save_panel(
         (degraded_depth_np, 'Degraded inverse-depth q'),
         (swap4_depth_np, 'Swap F4'),
         (swap34_depth_np, 'Swap F3+F4'),
-        (degraded_err_np, 'Absolute q drift (Degraded)'),
-        (swap34_err_np, 'Absolute q drift (Swap F3+F4)')
+        (degraded_err_np, f'Absolute q drift (Degraded), range 0..{error_max:.3g}'),
+        (swap34_err_np, f'Absolute q drift (Swap F3+F4), range 0..{error_max:.3g}')
     ]
 
     for ax, (img, name) in zip(axes, panels):

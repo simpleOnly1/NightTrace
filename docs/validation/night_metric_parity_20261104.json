@@ -1,0 +1,38 @@
+{
+  "date": "2026-11-04",
+  "scope": "Synthetic float64 arrays; same depth range for every paired comparison. Reduced center-crop geometry; not a real-data projection/split or GPU accuracy audit.",
+  "checks": [
+    {
+      "source": "rnw_robotcar",
+      "git_blob_sha": "bab497fd82aba498b804519f0f5ed777d6afcc4f",
+      "formula_arrays": 20,
+      "protocol_ranges": 3,
+      "images_per_range": 5,
+      "maximum_absolute_difference": 0
+    },
+    {
+      "source": "rnw_nuscenes",
+      "git_blob_sha": "66306bc8a0866632e1327ffd63c3b9dcb66f2646",
+      "formula_arrays": 20,
+      "protocol_ranges": 3,
+      "images_per_range": 5,
+      "maximum_absolute_difference": 0
+    },
+    {
+      "source": "steps_robotcar",
+      "git_blob_sha": "2141b84443951c415949a2630ac57025f5e6e0fe",
+      "formula_arrays": 20,
+      "protocol_ranges": 3,
+      "images_per_range": 5,
+      "maximum_absolute_difference": 0
+    },
+    {
+      "source": "steps_nuscenes",
+      "git_blob_sha": "e632fb7e42e51372edc3a863e88c7aa5e3004df8",
+      "formula_arrays": 20,
+      "protocol_ranges": 3,
+      "images_per_range": 5,
+      "maximum_absolute_difference": 0
+    }
+  ]
+}

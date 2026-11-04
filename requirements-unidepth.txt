@@ -1,0 +1,18 @@
+# UniDepth-only extras; Python 3.8 compatible.
+# Use tools/check_unidepth_env.py --install (project-local --target --no-deps).
+# Never replace torch, torchvision, numpy, OpenCV or scipy for this adapter.
+timm==0.9.16
+huggingface-hub==0.25.2
+einops==0.8.0
+safetensors==0.4.5
+filelock==3.16.1
+fsspec==2024.3.1
+packaging==24.2
+requests==2.32.3
+tqdm==4.67.1
+typing-extensions==4.12.2
+PyYAML==6.0.2
+certifi==2024.8.30
+charset-normalizer==3.4.0
+idna==3.10
+urllib3==2.2.3

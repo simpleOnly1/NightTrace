@@ -49,9 +49,9 @@ def candidates(cfg, block_seconds=30):
     return rows
 
 
-def select_samples(cfg, limit=512, seed=42, sample_list=None):
+def select_samples(cfg, limit=512, seed=42, sample_list=None, candidate_rows=None):
     settings=cfg.get('diagnosis',{})
-    rows=candidates(cfg,settings.get('block_seconds',30))
+    rows=candidates(cfg,settings.get('block_seconds',30)) if candidate_rows is None else candidate_rows
     if limit<0:raise ValueError('limit must be nonnegative; 0 means all eligible samples')
     if sample_list:
         by_id={r['id']:r for r in rows}
@@ -107,3 +107,4 @@ def save_selection(out, rows, audit):
     for name,records in [('sampling_coverage.csv',audit),('samples.csv',[{k:v for k,v in r.items() if k!='path'} for r in rows])]:
         with (out/name).open('w',newline='') as f:
             writer=csv.DictWriter(f,fieldnames=list(records[0]));writer.writeheader();writer.writerows(records)
+
