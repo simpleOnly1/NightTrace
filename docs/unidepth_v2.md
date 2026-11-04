@@ -2,7 +2,7 @@
 
 更新：2026-11-04。UniDepth V2 ViT-L/14 接入冻结八条件强度扫描，并为现有 Python 3.8 环境提供项目兼容层。允许它与 DAV2 具有相同或不同的失效原因，不预设其危险组合或过渡区。
 
-当前进度：用户提供的环境检查和单张真实权重结果已通过。Python 3.8.12，现有核心包版本检查前后一致，CUDA 输出正有限的 448×784 深度，157 个源码文件哈希与固定兼容版本全部匹配。现在执行第 5 节 nuScenes 正式扫描；不必重复环境准备或单图检查。尚无 UniDepth GT 精度或失效边界结论。
+当前进度：用户提供的环境检查和单张真实权重结果已通过；但正式扫描在首张 clean 推理的 cuBLASLt 算法选择处失败。当前先执行第 4b 节的 CUDA 短检查，再继续第 5 节。保留现有 Python 3.8.12 环境；尚无 UniDepth GT 精度或失效边界结论。
 
 ## 接口做了什么
 
@@ -85,7 +85,7 @@ CUDA_VISIBLE_DEVICES=1 python tools/smoke_inference.py \
 
 输出 `smoke.json`、未经显示归一化的浮点 `depth.npy` 和 `inverse_depth.npy`。这一步只检查原生输出、形状、有限性及本地权重/源码身份，不估计失效边界。本步骤已于 2026-11-04 根据用户提供的结果验收。
 
-以下两图检查供首次排查 GT/Flare 路径或端到端错误时使用，不是正式样本规模。本次沿用已验证的数据路径，可以直接进入第 5 节正式扫描；若需排查，命令如下（最多 58 次前向）：
+以下两图检查供首次排查 GT/Flare 路径时使用，不是正式样本规模。本次 CUDA 错误优先使用下方第 4b 节命令；这里保留通用路径排查命令（最多 58 次前向）：
 
 ```bash
 CUDA_VISIBLE_DEVICES=1 python diagnose_severity.py \
@@ -100,30 +100,51 @@ python tools/summarize_sweep.py --runs runs/uni_ns_check2 \
 
 如果显存不足，可在新配置中降低 resolution_level 并重新记录设置、使用新目录。不要在原目录中改变分辨率后续写。
 
-## 5. 真实接口通过后：完整正式扫描
+## 4b. cuBLASLt 算法选择错误：保持环境，先做短检查
+
+本次完整 traceback 在首张 clean 的 DINOv2 qkv 线性层报告 `CUBLAS_STATUS_NOT_SUPPORTED` / `cublasLtMatmulAlgoGetHeuristic`，不是退化图达到失效强度。单张 smoke 通过仍不足以排除 CUDA 执行路径问题；尚不能仅凭日志确定具体的驱动、库或资源原因。
+
+PyTorch 2.4.1 源码提供 `DISABLE_ADDMM_CUDA_LT=1`，可禁用 addmm 的 cuBLASLt 路径，作为本次错误的优先绕行检查。该变量必须在新 Python 进程启动前设置；不更新 Python、Torch 或 Torchvision。官方出处：[PyTorch v2.4.1 Blas.cpp](https://github.com/pytorch/pytorch/blob/v2.4.1/aten/src/ATen/native/cuda/Blas.cpp#L163-L186)。不自动切换精度，不静默重试失败样本。
+
+更新项目代码后，先做一张基图、clean＋七种 S4 退化的 8 次前向检查：
+
+```bash
+DISABLE_ADDMM_CUDA_LT=1 CUDA_VISIBLE_DEVICES=1 python diagnose_severity.py \
+  --config config/nuscenes_unidepthv2.yaml --source day-test \
+  --profile config/severity.yaml --limit 1 --levels 4 \
+  --conditions L N G LN LG NG LNG --repeats 1 --seed 42 \
+  --pairs 8192 --min-pairs 128 --pair-gap 0.1 --failure-delta 0.10 \
+  --save-vis --num-vis 1 --defer-summary --out runs/uni_ns_cuda_check1
+```
+
+看到 `[1/1]` 和 `Checkpoints complete` 后执行下节正式命令，保留同样的进程开关。如果仍报错，提供完整终端输出和 `nvidia-smi` 输出，继续查运行时；不要升级整个环境或改变退化强度。
+
+适配器将 CUDA build、可见 GPU 和相关 BLAS 环境变量写入模型身份/恢复合同。原失败目录保留，新全量实验使用 `runs/uni_ns_full_gt_cublas`，不向旧合同追加；今后恢复也保持同样的开关。单图成功和此次绕行的 GPU 成功是两项不同的验证，后者仍需服务器确认。
+
+## 5. CUDA 短检查通过后：完整正式扫描
 
 正式实验使用完整官方 day-test，保持七退化条件、0.25 剂量步长、两次重复和 seed=42；不只跑 DAV2 最敏感的 LN/LNG。GT 候选对数、近似等深过滤和主阈值沿用当前默认 8192 / 0.1 / 0.10。
 
 ### nuScenes
 
 ```bash
-CUDA_VISIBLE_DEVICES=1 python diagnose_severity.py \
+DISABLE_ADDMM_CUDA_LT=1 CUDA_VISIBLE_DEVICES=1 python diagnose_severity.py \
   --config config/nuscenes_unidepthv2.yaml --source day-test \
   --all-split --limit 0 --profile config/severity.yaml \
   --level-step 0.25 --repeats 2 --seed 42 \
   --pairs 8192 --min-pairs 128 --pair-gap 0.1 --failure-delta 0.10 \
-  --save-vis --num-vis 2 --defer-summary --out runs/uni_ns_full_gt
+  --save-vis --num-vis 2 --defer-summary --out runs/uni_ns_full_gt_cublas
 
-python tools/summarize_sweep.py --runs runs/uni_ns_full_gt \
+python tools/summarize_sweep.py --runs runs/uni_ns_full_gt_cublas \
   --no-fit --bootstrap 1000 --out runs/uni_ns_analysis
 ```
 
-500 张时，112,500 次前向、113,000 行，与 DAV2 nuScenes 的设计一致。两张仅指保存可视化的数量，全部 500 张仍参与定量分析。完成后提供 `runs/uni_ns_analysis/` 整个目录以及推理目录中的 `run.yaml` 和 `contract.json`，用于核对与 DAV2 的样本、合成参数、输入审计及 GT 协议。
+500 张时，112,500 次前向、113,000 行，与 DAV2 nuScenes 的设计一致。两张仅指保存可视化的数量，全部 500 张仍参与定量分析。完成后提供 `runs/uni_ns_analysis/` 整个目录以及 `runs/uni_ns_full_gt_cublas/` 中的 `run.yaml` 和 `contract.json`，用于核对与 DAV2 的样本、合成参数、输入审计及 GT 协议。
 
 ### RobotCar（nuScenes 通过后再执行）
 
 ```bash
-CUDA_VISIBLE_DEVICES=1 python diagnose_severity.py \
+DISABLE_ADDMM_CUDA_LT=1 CUDA_VISIBLE_DEVICES=1 python diagnose_severity.py \
   --config config/robotcar_unidepthv2.yaml --source day-test \
   --all-split --limit 0 --profile config/severity.yaml \
   --level-step 0.25 --repeats 2 --seed 42 \
@@ -144,7 +165,7 @@ python tools/summarize_sweep.py --runs runs/uni_rc_full_gt \
 
 CPU、小张量及假 UniDepth 类测试还覆盖浮点输入、官方 infer 参数、严格权重加载、冻结、源码身份、原生深度语义和现有扫描/恢复/指标回归。
 
-真实大权重由用户在服务器加载，本地不保存该权重。当前通过的是单张接口检查，尚无 UniDepth 失效结论。下一步执行第 5 节 nuScenes 全量 GT 扫描，核对实测曲线后再推进 RobotCar。
+真实大权重由用户在服务器加载，本地不保存该权重。当前通过的是单张接口检查，尚无 UniDepth 失效结论。下一步先完成第 4b 节 CUDA 检查，再执行第 5 节 nuScenes 全量 GT 扫描，核对实测曲线后再推进 RobotCar。
 
 官方来源：
 

@@ -2,6 +2,7 @@
 import contextlib
 import io
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -122,6 +123,36 @@ class UniDepthTests(unittest.TestCase):
                 self.assertNotEqual(a['source_sha256'],b['source_sha256'])
                 torch.save({'unexpected':torch.ones(())},weights/'pytorch_model.bin')
                 with self.assertRaises(RuntimeError): adapter.UniDepthV2Adapter(weights)
+
+    def test_cuda_backend_settings_are_recorded_in_model_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp); weights,modules=fixture(root)
+            with patch.dict(sys.modules,modules), patch.object(adapter,'__file__',str(root/'models/unidepth_adapter.py')):
+                with patch.dict(os.environ,{'DISABLE_ADDMM_CUDA_LT':'0','CUDA_VISIBLE_DEVICES':'1'}):
+                    original=adapter.UniDepthV2Adapter(weights).inference_metadata
+                with patch.dict(os.environ,{'DISABLE_ADDMM_CUDA_LT':'1','CUDA_VISIBLE_DEVICES':'1'}):
+                    changed=adapter.UniDepthV2Adapter(weights).inference_metadata
+                self.assertNotEqual(original['cuda_execution'], changed['cuda_execution'])
+                self.assertEqual(changed['cuda_execution']['disable_addmm_cuda_lt'],'1')
+                self.assertEqual(changed['cuda_execution']['visible_devices'],'1')
+                self.assertEqual(original['weights_sha256'],changed['weights_sha256'])
+
+    def test_cublaslt_failure_explains_process_workaround_without_retry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp); weights,modules=fixture(root)
+            with patch.dict(sys.modules,modules), patch.object(adapter,'__file__',str(root/'models/unidepth_adapter.py')):
+                model=adapter.UniDepthV2Adapter(weights)
+                problem=RuntimeError('CUDA error: CUBLAS_STATUS_NOT_SUPPORTED when calling cublasLtMatmulAlgoGetHeuristic')
+                with patch.object(model.net,'infer',side_effect=problem) as infer:
+                    with self.assertRaisesRegex(RuntimeError,'DISABLE_ADDMM_CUDA_LT=1') as caught:
+                        model(torch.ones(1,3,4,6))
+                    self.assertIs(caught.exception.__cause__,problem)
+                    self.assertEqual(infer.call_count,1)
+                other=RuntimeError('CUDA out of memory')
+                with patch.object(model.net,'infer',side_effect=other):
+                    with self.assertRaises(RuntimeError) as caught:
+                        model(torch.ones(1,3,4,6))
+                    self.assertIs(caught.exception,other)
 
     def test_source_import_rejects_collision_and_traversal(self):
         def archive(files):

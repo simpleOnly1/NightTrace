@@ -1,6 +1,7 @@
 """Offline UniDepth V2 ViT-L RGB-only inference using the official infer API."""
 import hashlib
 import json
+import os
 from importlib import metadata
 from pathlib import Path
 import sys
@@ -88,6 +89,16 @@ class UniDepthV2Adapter(nn.Module):
             source_sha256=source_hashes, package_versions=versions)
         self.inference_metadata['python'] = sys.version
         self.inference_metadata['compatibility'] = 'NightTrace Python 3.8 annotation backport; official upstream declares >=3.10'
+        # The CUDA addmm backend is selected/cached by PyTorch at process startup.
+        # Include the process settings in the resume contract; do not silently
+        # switch precision or kernels for individual degraded images.
+        self.inference_metadata['cuda_execution'] = dict(
+            torch_cuda_build=torch.version.cuda,
+            visible_devices=os.environ.get('CUDA_VISIBLE_DEVICES'),
+            disable_addmm_cuda_lt=os.environ.get('DISABLE_ADDMM_CUDA_LT'),
+            cublaslt_workspace_size=os.environ.get('CUBLASLT_WORKSPACE_SIZE'),
+            cublas_workspace_config=os.environ.get('CUBLAS_WORKSPACE_CONFIG'),
+            blas_prefer_cublaslt=os.environ.get('TORCH_BLAS_PREFER_CUBLASLT'))
 
     def train(self, mode=True):
         # This adapter deliberately exposes no fine-tuning or DAV2 feature-swap API.
@@ -97,7 +108,20 @@ class UniDepthV2Adapter(nn.Module):
         if rgb.ndim != 4 or rgb.shape[1] != 3 or not torch.isfinite(rgb).all() or (rgb < 0).any() or (rgb > 1).any():
             raise ValueError('UniDepth input must be finite Bx3xHxW RGB in [0,1]')
         with torch.no_grad():
-            result = self.net.infer(rgb * 255.0, camera=None, normalize=True)
+            try:
+                result = self.net.infer(rgb * 255.0, camera=None, normalize=True)
+            except RuntimeError as error:
+                if ('CUBLAS_STATUS_NOT_SUPPORTED' in str(error) and
+                        'cublasLtMatmulAlgoGetHeuristic' in str(error)):
+                    raise RuntimeError(
+                        'UniDepth CUDA/cuBLASLt algorithm selection failed. '
+                        'Keep the existing Python/torch environment. In a NEW process '
+                        'try DISABLE_ADDMM_CUDA_LT=1 before the python command; '
+                        'use a new run directory because runtime settings are recorded '
+                        'in the contract. If it still fails, provide the full traceback '
+                        'and nvidia-smi output. No precision fallback was applied. '
+                        'Original error: ' + str(error)) from error
+                raise
         depth = result['depth'].float()
         if (depth.shape != (rgb.shape[0], 1, rgb.shape[2], rgb.shape[3]) or
                 not torch.isfinite(depth).all() or (depth <= 0).any()):
