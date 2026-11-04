@@ -1,13 +1,13 @@
-# NightTrace build status — 2026-11-03
+# NightTrace build status — 2026-11-04
 
 当前步骤见 [UniDepth V2 执行说明](docs/unidepth_v2.md)。已收到并分析 DAV2 / nuScenes 全量结果，现接入第二个基础模型。
 
 - 按用户要求继续使用 Python 3.8 的 nighttime_ds：固定官方源码的类型标注回移、去除非推理可视化自动导入，补充依赖仅安装到项目内 `.deps/`，不升级 DAV2 环境的核心包。详见上述执行说明第 3 节。
-- 真实 Python 3.8 的源码准备/编译与专项测试通过；本地 Torch 环境成功真实导入官方 UniDepthV2。服务器 Python 3.8 + 真实权重的 GPU smoke 尚待执行。
+- 用户提供的 uni_env_check.json 与 smoke.json 已验收：现有 nighttime_ds / Python 3.8.12，核心包版本检查前后一致；本地权重完成 CUDA 单张推理，输出 448×784 正有限深度；157 个源码文件哈希与固定版本兼容源码全部一致。下一步为 UniDepth / nuScenes 完整 day-test 八条件扫描。
 
 - UniDepth V2 ViT-L/14 已接入冻结强度扫描，使用官方 infer、RGB-only、本地严格权重加载；原生 metric depth 直接评价，倒数仅用于漂移/可视化。
 - 新增独立配置、固定版本源码准备工具、一张真实权重检查入口及离线下载指南。权重与源码/配置身份纳入推理合同。
-- CPU 测试覆盖新适配器与已有扫描/恢复/分片/指标回归。真实 UniDepth checkpoint 和 GPU 尚未在本环境运行；尚无其失效规律结论。
+- CPU 测试覆盖新适配器与已有扫描/恢复/分片/指标回归。真实 checkpoint 已在用户服务器完成单张 CUDA 推理；GT 退化扫描结果尚待生成，尚无 UniDepth 的精度或失效规律结论。
 - 各模型允许具有相同或不同的失效原因；先测各自响应，再分析并针对性优化。Marigold V2 与下游迁移仍待后续推进。
 
 ## 2026-10-27 阶段记录

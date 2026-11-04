@@ -1,6 +1,8 @@
 # UniDepth V2 接入与下一步实验
 
-更新：2026-11-03。UniDepth V2 ViT-L/14 接入冻结八条件强度扫描，并为现有 Python 3.8 环境提供项目兼容层。允许它与 DAV2 具有相同或不同的失效原因，不预设其危险组合或过渡区。
+更新：2026-11-04。UniDepth V2 ViT-L/14 接入冻结八条件强度扫描，并为现有 Python 3.8 环境提供项目兼容层。允许它与 DAV2 具有相同或不同的失效原因，不预设其危险组合或过渡区。
+
+当前进度：用户提供的环境检查和单张真实权重结果已通过。Python 3.8.12，现有核心包版本检查前后一致，CUDA 输出正有限的 448×784 深度，157 个源码文件哈希与固定兼容版本全部匹配。现在执行第 5 节 nuScenes 正式扫描；不必重复环境准备或单图检查。尚无 UniDepth GT 精度或失效边界结论。
 
 ## 接口做了什么
 
@@ -81,9 +83,9 @@ CUDA_VISIBLE_DEVICES=1 python tools/smoke_inference.py \
   --out runs/uni_ns_smoke
 ```
 
-输出 `smoke.json`、未经显示归一化的浮点 `depth.npy` 和 `inverse_depth.npy`。这一步只检查原生输出、形状、有限性及本地权重/源码身份，不估计失效边界。把 smoke.json 和实际报错（如有）提供后，再确认完整实验。
+输出 `smoke.json`、未经显示归一化的浮点 `depth.npy` 和 `inverse_depth.npy`。这一步只检查原生输出、形状、有限性及本地权重/源码身份，不估计失效边界。本步骤已于 2026-11-04 根据用户提供的结果验收。
 
-需要检查八条件端到端时，只用两张图做一次软件连通检查（最多 58 次前向），不把两张图当研究样本结论：
+以下两图检查供首次排查 GT/Flare 路径或端到端错误时使用，不是正式样本规模。本次沿用已验证的数据路径，可以直接进入第 5 节正式扫描；若需排查，命令如下（最多 58 次前向）：
 
 ```bash
 CUDA_VISIBLE_DEVICES=1 python diagnose_severity.py \
@@ -110,13 +112,13 @@ CUDA_VISIBLE_DEVICES=1 python diagnose_severity.py \
   --all-split --limit 0 --profile config/severity.yaml \
   --level-step 0.25 --repeats 2 --seed 42 \
   --pairs 8192 --min-pairs 128 --pair-gap 0.1 --failure-delta 0.10 \
-  --defer-summary --out runs/uni_ns_full_gt
+  --save-vis --num-vis 2 --defer-summary --out runs/uni_ns_full_gt
 
 python tools/summarize_sweep.py --runs runs/uni_ns_full_gt \
   --no-fit --bootstrap 1000 --out runs/uni_ns_analysis
 ```
 
-500 张时，112,500 次前向、113,000 行，与 DAV2 nuScenes 的设计一致。
+500 张时，112,500 次前向、113,000 行，与 DAV2 nuScenes 的设计一致。两张仅指保存可视化的数量，全部 500 张仍参与定量分析。完成后提供 `runs/uni_ns_analysis/` 整个目录以及推理目录中的 `run.yaml` 和 `contract.json`，用于核对与 DAV2 的样本、合成参数、输入审计及 GT 协议。
 
 ### RobotCar（nuScenes 通过后再执行）
 
@@ -138,11 +140,11 @@ python tools/summarize_sweep.py --runs runs/uni_rc_full_gt \
 
 ## 交付与验证范围
 
-兼容层已使用真实 Python 3.8.10 完成固定官方 ZIP 的导入、全部 Python 源码编译和纯源码测试；数值语句的 AST 对比确认未修改计算。另在本地 Python 3.10 / Torch 2.0.1 / Torchvision 0.15.2 下，成功真实导入兼容后的 UniDepthV2，核心包版本检查前后一致，并验证 TorchScript 类型标注可用。后者不等于 Python 3.8 的真实权重推理已经通过。
+兼容层已使用真实 Python 3.8.10 完成固定官方 ZIP 的导入、全部 Python 源码编译和纯源码测试；数值语句的 AST 对比确认未修改计算。另在本地 Python 3.10 / Torch 2.0.1 / Torchvision 0.15.2 下，成功真实导入兼容后的 UniDepthV2，核心包版本检查前后一致，并验证 TorchScript 类型标注可用。2026-11-04 已进一步验收用户服务器 Python 3.8.12 下的真实权重单张 CUDA 推理。
 
 CPU、小张量及假 UniDepth 类测试还覆盖浮点输入、官方 infer 参数、严格权重加载、冻结、源码身份、原生深度语义和现有扫描/恢复/指标回归。
 
-本地未下载 1.42GB 权重、未在本地完成真实 UniDepth 推理，尚无 UniDepth 失效结论。下一步只需完成环境/源码/权重准备，并执行第 4 节真实 smoke，再继续正式扫描。
+真实大权重由用户在服务器加载，本地不保存该权重。当前通过的是单张接口检查，尚无 UniDepth 失效结论。下一步执行第 5 节 nuScenes 全量 GT 扫描，核对实测曲线后再推进 RobotCar。
 
 官方来源：
 
