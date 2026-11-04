@@ -2,7 +2,7 @@
 
 更新：2026-11-04。UniDepth V2 ViT-L/14 接入冻结八条件强度扫描，并为现有 Python 3.8 环境提供项目兼容层。允许它与 DAV2 具有相同或不同的失效原因，不预设其危险组合或过渡区。
 
-当前进度：用户提供的环境检查和单张真实权重结果已通过；但正式扫描在首张 clean 推理的 cuBLASLt 算法选择处失败。当前先执行第 4b 节的 CUDA 短检查，再继续第 5 节。保留现有 Python 3.8.12 环境；尚无 UniDepth GT 精度或失效边界结论。
+当前进度：现有 Python 3.8.12 的环境检查、单张真实权重推理和第 4b 节八次前向均已通过。保持 cuBLASLt 绕行开关，用户正在运行第 5 节 nuScenes 全量扫描；此前曾因其他进程占满同卡显存而 OOM，需在同卡有足够余量时恢复。真实夜间完整 test split 的独立七指标入口已补齐，命令及 RNW/STEPS 范围差异见 [真实夜间基线](real_night_baselines.md)。先让正在运行的扫描完成，再依次执行夜间基线；尚未收到 UniDepth 全量 GT 精度或失效边界结果。
 
 ## 接口做了什么
 
@@ -119,7 +119,7 @@ DISABLE_ADDMM_CUDA_LT=1 CUDA_VISIBLE_DEVICES=1 python diagnose_severity.py \
 
 看到 `[1/1]` 和 `Checkpoints complete` 后执行下节正式命令，保留同样的进程开关。如果仍报错，提供完整终端输出和 `nvidia-smi` 输出，继续查运行时；不要升级整个环境或改变退化强度。
 
-适配器将 CUDA build、可见 GPU 和相关 BLAS 环境变量写入模型身份/恢复合同。原失败目录保留，新全量实验使用 `runs/uni_ns_full_gt_cublas`，不向旧合同追加；今后恢复也保持同样的开关。单图成功和此次绕行的 GPU 成功是两项不同的验证，后者仍需服务器确认。
+适配器将 CUDA build、可见 GPU 和相关 BLAS 环境变量写入模型身份/恢复合同。原失败目录保留，新全量实验使用 `runs/uni_ns_full_gt_cublas`，不向旧合同追加；今后恢复也保持同样的开关。用户已提供上述八次前向成功日志，无需重复该短检查；保持相同命令设置推进全量扫描即可。
 
 ## 5. CUDA 短检查通过后：完整正式扫描
 
@@ -165,7 +165,7 @@ python tools/summarize_sweep.py --runs runs/uni_rc_full_gt \
 
 CPU、小张量及假 UniDepth 类测试还覆盖浮点输入、官方 infer 参数、严格权重加载、冻结、源码身份、原生深度语义和现有扫描/恢复/指标回归。
 
-真实大权重由用户在服务器加载，本地不保存该权重。当前通过的是单张接口检查，尚无 UniDepth 失效结论。下一步先完成第 4b 节 CUDA 检查，再执行第 5 节 nuScenes 全量 GT 扫描，核对实测曲线后再推进 RobotCar。
+真实大权重由用户在服务器加载，本地不保存该权重。单张和八次前向检查通过不等于已获得失效结论。继续第 5 节 nuScenes 全量 GT 扫描，核对实测曲线后再推进 RobotCar；真实夜间七指标基线另按链接文档执行。
 
 官方来源：
 
